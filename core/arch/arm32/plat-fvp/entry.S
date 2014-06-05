@@ -25,51 +25,85 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <tee/tee_obj.h>
+#include <asm.S>
+#include <arm32.h>
+#include <arm32_macros.S>
+#include <sm/teesmc.h>
+#include <sm/teesmc_opteed.h>
 
-#include <stdlib.h>
-#include <tee_api_defines.h>
-#include <mm/tee_mmu.h>
-#include <tee/tee_fs.h>
-#include <tee/tee_pobj.h>
-#include <kernel/tee_core_trace.h>
+.section .text.boot
+FUNC _start , :
+	b	reset
+	b	.	/* Undef */
+	b	.	/* Syscall */
+	b	.	/* Prefetch abort */
+	b	.	/* Data abort */
+	b	.	/* Reserved */
+	b	.	/* IRQ */
+	b	.	/* FIQ */
+END_FUNC _start
 
-void tee_obj_add(struct tee_ta_ctx *ctx, struct tee_obj *o)
-{
-	TAILQ_INSERT_TAIL(&ctx->objects, o, link);
-}
+LOCAL_FUNC reset , :
+	read_sctlr r0
+	orr	r0, r0, #SCTLR_A
+	write_sctlr r0
 
-TEE_Result tee_obj_get(struct tee_ta_ctx *ctx, uint32_t obj_id,
-		       struct tee_obj **obj)
-{
-	struct tee_obj *o;
+	ldr	r0, =_start
+	write_vbar r0
 
-	TAILQ_FOREACH(o, &ctx->objects, link) {
-		if (obj_id == (uint32_t) o) {
-			*obj = o;
-			return TEE_SUCCESS;
-		}
-	}
-	return TEE_ERROR_BAD_PARAMETERS;
-}
+	mov	r4, lr
+	bl	get_core_pos
+	lsl	r0, #2
+	ldr	r1, =stack_tmp_top
+	ldr	sp, [r1, r0]
 
-void tee_obj_close(struct tee_ta_ctx *ctx, struct tee_obj *o)
-{
-	TAILQ_REMOVE(&ctx->objects, o, link);
+#if 0
+	bl	dcache_clean_inv
+	bl	icache_inv
+#endif
+	bl	secure_mmu_init
+	bl	mmu_enable
+	bl	mmu_enable_icache
+	bl	mmu_enable_dcache
 
-	if ((o->info.handleFlags & TEE_HANDLE_FLAG_PERSISTENT) && o->fd >= 0) {
-		tee_fs_close(o->fd);
-		tee_pobj_release(o->pobj);
-	}
+	mov	r0, r4
+	bl	main_init
 
-	free(o->data);
-	free(o);
-}
+	/* Pass the vector address returned from main_init */
+	mov     r1, r0
+	ldr     r0, =TEESMC32_OPTEED_RETURN_ENTRY_DONE
+	smc	#0
+	b	.	/* SMC should not return */
+END_FUNC reset
 
-void tee_obj_close_all(struct tee_ta_ctx *ctx)
-{
-	struct tee_obj_head *objects = &ctx->objects;
+FUNC cpu_on_handler , :
+	mov	r4, r0
+	mov	r5, r1
+	mov	r6, lr
+	read_sctlr r0
+	orr	r0, r0, #SCTLR_A
+	write_sctlr r0
 
-	while (!TAILQ_EMPTY(objects))
-		tee_obj_close(ctx, TAILQ_FIRST(objects));
-}
+	ldr	r0, =_start
+	write_vbar r0
+
+	mov	r4, lr
+	bl	get_core_pos
+	lsl	r0, #2
+	ldr	r1, =stack_tmp_top
+	ldr	sp, [r1, r0]
+
+#if 0
+	bl	dcache_clean_inv
+	bl	icache_inv
+#endif
+	bl	secure_mmu_init
+	bl	mmu_enable
+	bl	mmu_enable_icache
+	bl	mmu_enable_dcache
+
+	mov	r0, r4
+	mov	r0, r5
+	bl	main_cpu_on_handler
+	bx	r6
+END_FUNC cpu_on_handler

@@ -25,51 +25,53 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <tee/tee_obj.h>
+#ifndef PLAT_H
+#define PLAT_H
 
-#include <stdlib.h>
-#include <tee_api_defines.h>
-#include <mm/tee_mmu.h>
-#include <tee/tee_fs.h>
-#include <tee/tee_pobj.h>
-#include <kernel/tee_core_trace.h>
+#define PLATFORM_LINKER_FORMAT	"elf32-littlearm"
+#define PLATFORM_LINKER_ARCH	arm
 
-void tee_obj_add(struct tee_ta_ctx *ctx, struct tee_obj *o)
-{
-	TAILQ_INSERT_TAIL(&ctx->objects, o, link);
-}
+#define DRAM0_BASE		0x80000000
+#define DRAM0_SIZE		0x80000000
 
-TEE_Result tee_obj_get(struct tee_ta_ctx *ctx, uint32_t obj_id,
-		       struct tee_obj **obj)
-{
-	struct tee_obj *o;
+/* Location of trusted dram on the base fvp */
+#define TZDRAM_BASE		0x06000000
+#define TZDRAM_SIZE		0x02000000
 
-	TAILQ_FOREACH(o, &ctx->objects, link) {
-		if (obj_id == (uint32_t) o) {
-			*obj = o;
-			return TEE_SUCCESS;
-		}
-	}
-	return TEE_ERROR_BAD_PARAMETERS;
-}
 
-void tee_obj_close(struct tee_ta_ctx *ctx, struct tee_obj *o)
-{
-	TAILQ_REMOVE(&ctx->objects, o, link);
+#define GIC_BASE		0x2c000000
+#define GICC_OFFSET		0x2000
+#define GICD_OFFSET		0x1000
 
-	if ((o->info.handleFlags & TEE_HANDLE_FLAG_PERSISTENT) && o->fd >= 0) {
-		tee_fs_close(o->fd);
-		tee_pobj_release(o->pobj);
-	}
+#define UART0_BASE		0x1c090000
+#define UART1_BASE		0x1c0a0000
+#define UART2_BASE		0x1c0b0000
+#define UART3_BASE		0x1c0c0000
 
-	free(o->data);
-	free(o);
-}
+#define IT_UART1		38
 
-void tee_obj_close_all(struct tee_ta_ctx *ctx)
-{
-	struct tee_obj_head *objects = &ctx->objects;
+#define CFG_TEE_CORE_NB_CORE	4
 
-	while (!TAILQ_EMPTY(objects))
-		tee_obj_close(ctx, TAILQ_FIRST(objects));
-}
+#define DDR_PHYS_START		DRAM0_BASE
+#define DDR_SIZE		DRAM0_SIZE
+
+#define CFG_DDR_START		DDR_PHYS_START
+#define CFG_DDR_SIZE		DDR_SIZE
+
+#define CFG_DDR_TEETZ_RESERVED_START	TZDRAM_BASE
+#define CFG_DDR_TEETZ_RESERVED_SIZE	TZDRAM_SIZE
+
+#define TEE_RAM_START		(TZDRAM_BASE + 0x2000)
+#define TEE_RAM_SIZE		0x0010000
+
+#define CFG_SHMEM_START		(DDR_PHYS_START + 0x1000000)
+#define CFG_SHMEM_SIZE		0x100000
+
+#define STACK_TMP_SIZE		1024
+#define STACK_ABT_SIZE		1024
+#define STACK_THREAD_SIZE	8192
+
+
+#define STACK_ALIGNMENT		8
+
+#endif /*PLAT_H*/

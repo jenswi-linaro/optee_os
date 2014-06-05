@@ -52,6 +52,8 @@ static void output_string(const char *str)
 
 	while (*p) {
 		uart_putc(*p, UART1_BASE);
+		if (*p == '\n')
+			uart_putc('\r', UART1_BASE);
 		p++;
 	}
 }
