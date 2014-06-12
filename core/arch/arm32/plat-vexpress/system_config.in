@@ -1,0 +1,20 @@
+# this script defines platform specficis settings for TEE armv7 build
+
+DDR_PHYS_START	:= 0x80000000
+DDR_SIZE	:= 0x20000000 # 512 * 1024 * 1024
+
+# Hard coded NB cores
+CFG_TEE_CORE_NB_CORE := 2
+
+# Static configuration of DDR reserved to TEE/TZ
+# Provide here only start address and size. TEEcore will adapt.
+# Allow these settings to be overridden.
+CFG_DDR_TEETZ_RESERVED_START ?= 0x9F800000
+CFG_DDR_TEETZ_RESERVED_SIZE ?= 0x00800000
+
+TEE_RAM_START	:= $(CFG_DDR_TEETZ_RESERVED_START)
+TEE_RAM_SIZE	:= 0x0010000
+
+STACK_TMP_SIZE		:= 1024	# TODO minimize
+STACK_ABT_SIZE		:= 1024
+STACK_THREAD_SIZE	:= 8192
