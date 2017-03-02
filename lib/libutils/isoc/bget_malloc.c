@@ -72,6 +72,7 @@
 #define BufValid    1
 #define FreeWipe    1
 #endif
+#define FreeWipe    1
 
 #ifdef CFG_WITH_STATS
 #define BufStats    1
@@ -625,6 +626,8 @@ static void gen_mdbg_check(struct malloc_ctx *ctx, int bufdump)
 
 	raw_malloc_validate_pools(ctx);
 
+	if (bufdump > 0)
+		IMSG("****** Dumping buffers *******");
 	BPOOL_FOREACH(ctx, &itr, &b) {
 		struct mdbg_hdr *hdr = (struct mdbg_hdr *)b;
 
@@ -640,6 +643,9 @@ static void gen_mdbg_check(struct malloc_ctx *ctx, int bufdump)
 				hdr->pl_size, fname, hdr->line);
 		}
 	}
+
+	if (bufdump > 0)
+		IMSG("****** End of buffers *******");
 
 	malloc_unlock(ctx, exceptions);
 }

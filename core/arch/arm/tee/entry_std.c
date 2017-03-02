@@ -541,12 +541,15 @@ uint32_t __tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 	switch (arg->cmd) {
 	case OPTEE_MSG_CMD_OPEN_SESSION:
 		entry_open_session(arg, num_params);
+		mdbg_check(1);
 		break;
 	case OPTEE_MSG_CMD_CLOSE_SESSION:
 		entry_close_session(arg, num_params);
+		mdbg_check(1);
 		break;
 	case OPTEE_MSG_CMD_INVOKE_COMMAND:
 		entry_invoke_command(arg, num_params);
+		mdbg_check(1);
 		break;
 	case OPTEE_MSG_CMD_CANCEL:
 		entry_cancel(arg, num_params);
