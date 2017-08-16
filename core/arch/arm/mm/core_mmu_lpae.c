@@ -387,7 +387,7 @@ static struct tee_mmap_region *init_xlation_table(struct tee_mmap_region *mm,
 					desc |= base_va - mm->va + mm->pa;
 			}
 
-			if (desc)
+			if (desc != UNSET_DESC && desc)
 				debug_print("%*s%010" PRIx64 " %8x %s-%s-%s-%s",
 					level * 2, "", base_va, level_size,
 					attr & (TEE_MATTR_CACHE_CACHED <<
