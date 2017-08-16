@@ -233,7 +233,7 @@ void *tee_pager_phys_to_virt(paddr_t pa)
 	while (true) {
 		while (idx < TBL_NUM_ENTRIES) {
 			v = core_mmu_idx2va(&pager_tables[n].tbl_info, idx);
-			if (v > (CFG_TEE_RAM_START + CFG_TEE_RAM_VA_SIZE))
+			if (v >= (CFG_TEE_RAM_START + CFG_TEE_RAM_VA_SIZE))
 				return NULL;
 
 			core_mmu_get_entry(&pager_tables[n].tbl_info,
@@ -272,8 +272,7 @@ static struct pager_table *find_pager_table(vaddr_t va)
 {
 	struct pager_table *pt = find_pager_table_may_fail(va);
 
-	if (!pt)
-		panic();
+	assert(pt);
 	return pt;
 }
 
@@ -308,6 +307,7 @@ static void set_alias_area(tee_mm_entry_t *mm)
 
 	DMSG("0x%" PRIxVA " - 0x%" PRIxVA, smem, smem + nbytes);
 
+	assert(!pager_alias_area);
 	pager_alias_area = mm;
 	pager_alias_next_free = smem;
 
