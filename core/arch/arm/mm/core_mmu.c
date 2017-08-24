@@ -848,8 +848,7 @@ static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 	if (core_mmu_place_tee_ram_at_top(va)) {
 		/* Map non-flat mapped addresses below flat mapped addresses */
 		for (map = memory_map; !core_mmap_is_end_of_table(map); map++) {
-			if (map_is_flat_mapped(map) ||
-			    map->type == MEM_AREA_PAGER_VASPACE)
+			if (map->va)
 				continue;
 
 #if !defined(CFG_WITH_LPAE)
@@ -871,8 +870,7 @@ static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 		/* Map non-flat mapped addresses above flat mapped addresses */
 		va = end;
 		for (map = memory_map; !core_mmap_is_end_of_table(map); map++) {
-			if (map_is_flat_mapped(map) ||
-			    map->type == MEM_AREA_PAGER_VASPACE)
+			if (map->va)
 				continue;
 
 #if !defined(CFG_WITH_LPAE)
