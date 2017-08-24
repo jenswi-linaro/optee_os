@@ -738,7 +738,7 @@ static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 	size_t last = 0;
 	size_t __maybe_unused count = 0;
 	vaddr_t va;
-	vaddr_t __maybe_unused end;
+	vaddr_t end;
 	bool __maybe_unused va_is_secure = true; /* any init value fits */
 	vaddr_t next_pgdir_va;
 
