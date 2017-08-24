@@ -694,19 +694,18 @@ static void dump_mmap_table(struct tee_mmap_region *memory_map)
 }
 
 static void add_pager_vaspace(struct tee_mmap_region *mmap __maybe_unused,
-			      size_t num_elems __maybe_unused, vaddr_t begin,
-			      vaddr_t end __maybe_unused,
-			      size_t *last __maybe_unused,
-			      vaddr_t *next_pgdir_va)
+			      size_t num_elems __maybe_unused,
+			      vaddr_t begin __maybe_unused,
+			      vaddr_t *end __maybe_unused,
+			      size_t *last __maybe_unused)
 {
-	vaddr_t begin_pgdir = ROUNDDOWN(begin, CORE_MMU_PGDIR_SIZE);
 #ifdef CFG_WITH_PAGER
-	size_t size = CFG_TEE_RAM_VA_SIZE - (end - begin_pgdir);
+	size_t size = CFG_TEE_RAM_VA_SIZE - (*end - begin);
 	size_t n;
 	size_t pos = 0;
 
 	if (!size)
-		goto out;
+		return;
 
 	if (*last >= (num_elems - 1)) {
 		EMSG("Out of entries (%zu) in memory map", num_elems);
@@ -723,15 +722,13 @@ static void add_pager_vaspace(struct tee_mmap_region *mmap __maybe_unused,
 	(*last)++;
 	memset(mmap + pos, 0, sizeof(mmap[0]));
 	mmap[pos].type = MEM_AREA_PAGER_VASPACE;
-	mmap[pos].va = end;
+	mmap[pos].va = *end;
 	mmap[pos].size = size;
 	mmap[pos].region_size = SMALL_PAGE_SIZE;
 	mmap[pos].attr = core_mmu_type_to_attr(MEM_AREA_PAGER_VASPACE);
-out:
-#endif /*CFG_WITH_PAGER*/
 
-	*next_pgdir_va = ROUNDUP(begin_pgdir + CFG_TEE_RAM_VA_SIZE,
-				 CORE_MMU_PGDIR_SIZE);
+	*end += size;
+#endif /*CFG_WITH_PAGER*/
 }
 
 static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
@@ -826,8 +823,9 @@ static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 
 	/*
 	 * Map flat mapped addresses first.
-	 * 'va' will store the lower address of the flat-mapped areas to later
-	 * setup the virtual mapping of the non flat-mapped areas.
+	 * 'va' (resp. 'end') will store the lower (reps. higher) address of
+	 * the flat-mapped areas to later setup the virtual mapping of the non
+	 * flat-mapped areas.
 	 */
 	va = (vaddr_t)~0UL;
 	end = 0;
@@ -843,8 +841,9 @@ static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 	assert(va >= CFG_TEE_RAM_START);
 	assert(end <= CFG_TEE_RAM_START + CFG_TEE_RAM_VA_SIZE);
 
-	add_pager_vaspace(memory_map, num_elems, va, end, &last,
-			  &next_pgdir_va);
+	add_pager_vaspace(memory_map, num_elems, va, &end, &last);
+
+	assert(!((va | end) & SMALL_PAGE_MASK));
 
 	if (core_mmu_place_tee_ram_at_top(va)) {
 		/* Map non-flat mapped addresses below flat mapped addresses */
@@ -870,7 +869,7 @@ static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 		}
 	} else {
 		/* Map non-flat mapped addresses above flat mapped addresses */
-		va = next_pgdir_va;
+		va = end;
 		for (map = memory_map; !core_mmap_is_end_of_table(map); map++) {
 			if (map_is_flat_mapped(map) ||
 			    map->type == MEM_AREA_PAGER_VASPACE)
