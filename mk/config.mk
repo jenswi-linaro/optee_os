@@ -326,3 +326,9 @@ CFG_TA_MBEDTLS ?= y
 # Compile the TA library mbedTLS with self test functions, the functions
 # need to be called to test anything
 CFG_TA_MBEDTLS_SELF_TEST ?= y
+
+# Compile additional TAs that provide misc. auxiliary services
+CFG_TA_SERVICES ?= y
+
+# Enable Keymaster TA, which provides AOSP Keymaster services.
+CFG_TA_SERVICES_KEYMASTER ?= 64

@@ -83,6 +83,10 @@ endef
 $(foreach t, $(ta-targets), $(eval $(call build-ta-target, $(t))))
 endif
 
+ifeq ($(CFG_TA_SERVICES),y)
+include ta_services/ta_services.mk
+endif
+
 include mk/cleandirs.mk
 
 .PHONY: clean
