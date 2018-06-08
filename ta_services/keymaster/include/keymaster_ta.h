@@ -17,4 +17,26 @@
  */
 #define KEYMASTER_CMD_ADD_RNG_ENTROPY	0
 
+/*
+ * See description of genereateKey at [0] for the different elements.
+ * [0] Link: https://source.android.com/reference/hidl/android/hardware/keymaster/3.0/types#keyparameter
+ *
+ * in	params[0].memref  = serialized array of struct key_param
+ * out	params[1].memref  = keyBlob
+ * out	params[2].memref  = serialized array of struct key_param representing
+ *			    the teeEnforced array of keyCharacteristics.
+ *
+ * struct key_param - holds a key parameter
+ * @tag		opaque value when serializing
+ * @size	size of data below
+ * @data	data of the key parameter @size bytes large
+ *
+ * struct key_param {
+ *	uint32_t tag;	@tag is an opaque value when serializing
+ *	uint32_t size;
+ *	uint8_t data[]; @data is @size large
+ * };
+ */
+#define KEYMASTER_CMD_GENERATE_KEY	1
+
 #endif /*__KEYMASTER_TA_H*/
