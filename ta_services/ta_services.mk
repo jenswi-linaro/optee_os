@@ -31,7 +31,7 @@ ta_keymaster_dir := keymaster
 
 all: ta_keymaster
 .PHONY: ta_keymaster
-ta_keymaster:
+ta_keymaster: ta_dev_kit
 	$(MAKE) -C ta_services/$(ta_keymaster_dir) $(ta_keymaster_flags) \
 		O=$(CURDIR)/$(out-dir)/ta_services/$(ta_keymaster_dir)
 
