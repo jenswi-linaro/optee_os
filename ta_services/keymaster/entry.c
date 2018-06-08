@@ -67,6 +67,50 @@ out:
 	return res;
 }
 
+static TEE_Result get_key_characteristics(uint32_t pt,
+					  TEE_Param params[TEE_NUM_PARAMS])
+{
+	const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+						TEE_PARAM_TYPE_MEMREF_INPUT,
+						TEE_PARAM_TYPE_MEMREF_OUTPUT,
+						TEE_PARAM_TYPE_NONE);
+	TEE_Result res;
+	TEE_Result res2 = TEE_SUCCESS;
+	struct km_key_param_head kph;
+	struct pack_state pack_state;
+
+	if (pt != exp_pt)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	TAILQ_INIT(&kph);
+	if (params[1].memref.size) {
+		pack_state_read_init(&pack_state, params[1].memref.buffer,
+				     params[1].memref.size);
+
+		res = unpack_key_param(&pack_state, &kph);
+		if (res)
+			goto out;
+	}
+
+	res = km_get_key_characteristics(params[0].memref.buffer,
+					 params[0].memref.size, &kph);
+	if (res)
+		goto out;
+
+	pack_state_write_init(&pack_state, params[2].memref.buffer,
+			      params[2].memref.size);
+	res = pack_key_param(&pack_state, &kph);
+	if (res)
+		goto out;
+	if (pack_state.offs > params[2].memref.size)
+		res2 = TEE_ERROR_SHORT_BUFFER;
+	params[2].memref.size = pack_state.offs;
+	res = res2;
+out:
+	km_key_param_free_list_content(&kph);
+	return res;
+}
+
 TEE_Result TA_CreateEntryPoint(void)
 {
 	return TEE_SUCCESS;
@@ -123,6 +167,9 @@ TEE_Result TA_InvokeCommandEntryPoint(void __unused *sess, uint32_t cmd,
 		break;
 	case KEYMASTER_CMD_GENERATE_KEY:
 		res = generate_key(pt, params);
+		break;
+	case KEYMASTER_CMD_GET_KEY_CHARACTERISTICS:
+		res = get_key_characteristics(pt, params);
 		break;
 	default:
 		EMSG("Command ID 0x%x is not supported", cmd);

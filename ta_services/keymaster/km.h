@@ -178,4 +178,7 @@ TEE_Result km_add_rng_entropy(const void *buf, size_t blen);
 TEE_Result km_gen_key(struct km_key_param_head *kph, void *key_blob,
 		      size_t *key_blob_size);
 
+TEE_Result km_get_key_characteristics(void *key_blob, size_t key_blob_size,
+				      struct km_key_param_head *kph);
+
 #endif /*LOCAL_KM_H*/

@@ -39,4 +39,17 @@
  */
 #define KEYMASTER_CMD_GENERATE_KEY	1
 
+/*
+ * Returns parameters and authorizations associated with the provided key,
+ * see description of getKeyCharacteristics at [0] for the different elemenets.
+ * [0] Link: https://source.android.com/reference/hidl/android/hardware/keymaster/3.0/IKeymasterDevice#getkeycharacteristics
+ *
+ * in   params[0].memref  = keyBlob
+ * in   params[1].memref  = serialized array of struct key_param holding
+ *			    APPLICATION_ID and APPLICATION_DATA
+ * out	params[2].memref  = serialized array of struct key_param representing
+ *			    the teeEnforced array of keyCharacteristics.
+ */
+#define KEYMASTER_CMD_GET_KEY_CHARACTERISTICS 2
+
 #endif /*__KEYMASTER_TA_H*/

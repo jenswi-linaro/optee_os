@@ -25,9 +25,6 @@
 
 static const uint32_t storageid = TEE_STORAGE_PRIVATE;
 static const char ae_key_name[] = "aekey";
-static const char ca_name[] = "ca";
-static const char mid_name[] = "mid";
-static const char midkey_name[] = "midkey";
 
 TEE_Result km_add_rng_entropy(const void *buf, size_t blen)
 {
@@ -450,6 +447,126 @@ out:
 
 }
 
+static TEE_Result make_key(TEE_Attribute *attrs, size_t attr_count,
+			   struct km_key_param_head *kph, TEE_ObjectHandle *key)
+{
+	TEE_Result res;
+	uint64_t v;
+	TEE_ObjectHandle h;
+	uint32_t obj_type;
+	uint32_t key_size;
+
+	if (key_param_to_value(km_key_param_find(kph, KM3_TAG_ALGORITHM), &v))
+		return TEE_ERROR_GENERIC;
+	switch (v) {
+	case KM_RSA:
+		obj_type = TEE_TYPE_RSA_KEYPAIR;
+		break;
+	default:
+		EMSG("Unsupported keymaster algorithm %d", (int)v);
+		return TEE_ERROR_GENERIC;
+	}
+
+	if (key_param_to_value(km_key_param_find(kph, KM3_TAG_KEY_SIZE), &v))
+		return TEE_ERROR_GENERIC;
+	key_size = v;
+
+	res = TEE_AllocateTransientObject(obj_type, key_size, &h);
+	if (res)
+		return res;
+	res = TEE_PopulateTransientObject(h, attrs, attr_count);
+	if (res) {
+		TEE_FreeTransientObject(h);
+		return res;
+	}
+
+	*key = h;
+	return TEE_SUCCESS;
+}
+
+static TEE_Result decrypt_key_blob(void *key_blob, size_t key_blob_size,
+				   struct km_key_param_head *kph,
+				   TEE_ObjectHandle *key)
+{
+	TEE_Result res;
+	struct pack_state ps;
+	TEE_OperationHandle op = TEE_HANDLE_NULL;
+	size_t aad_size = 0;
+	void *aad_data = NULL;
+	uint8_t *data = NULL;
+	size_t data_len;
+	size_t l;
+
+	if (SUB_OVERFLOW(key_blob_size, AE_IV_LEN, &data_len))
+		return TEE_ERROR_BAD_PARAMETERS;
+	if (SUB_OVERFLOW(data_len, AE_TAG_LEN, &data_len))
+		return TEE_ERROR_BAD_PARAMETERS;
+	data = TEE_Malloc(data_len, TEE_MALLOC_FILL_ZERO);
+	if (!data)
+		return TEE_ERROR_OUT_OF_MEMORY;
+
+	kp_sort_aad_tags(kph);
+	res = make_kp_blob(kph, &aad_data, &aad_size, kp_filter_aad);
+	if (res)
+		goto out;
+
+	res = TEE_AllocateOperation(&op, AE_ALGO, TEE_MODE_DECRYPT,
+				    AE_KEYLEN * 8);
+	if (res)
+		return res;
+	res = set_blob_key(op);
+	if (res)
+		goto out;
+	res = TEE_AEInit(op, key_blob, AE_IV_LEN, AE_TAG_LEN * 8, aad_size,
+			 data_len);
+	if (res)
+		goto out;
+
+	TEE_AEUpdateAAD(op, aad_data, aad_size);
+
+	l = data_len;
+	res = TEE_AEDecryptFinal(op, (uint8_t *)key_blob + AE_IV_LEN, data_len,
+				 data, &l,
+				 (uint8_t *)key_blob + AE_IV_LEN + data_len,
+				 AE_TAG_LEN);
+	if (res)
+		goto out;
+	if (l != data_len) {
+		res = TEE_ERROR_GENERIC;
+		goto out;
+	}
+
+	pack_state_read_init(&ps, data, data_len);
+	/*
+	 * Remove eventual supplied KM3_TAG_APPLICATION_ID and
+	 * KM3_TAG_APPLICATION_DATA now that we're about to add what's in
+	 * the key blob instead.
+	 */
+	km_key_param_free_list_content(kph);
+	res = unpack_key_param(&ps, kph);
+	if (res)
+		goto out;
+
+	if (key) {
+		TEE_Attribute *attrs;
+		uint32_t attr_count;
+
+		res = unpack_attrs(&ps, &attrs, &attr_count);
+		if (res)
+			goto out;
+		res = make_key(attrs, attr_count, kph, key);
+		TEE_Free(attrs);
+	}
+
+out:
+	if (res)
+		km_key_param_free_list_content(kph);
+	TEE_Free(data);
+	TEE_Free(aad_data);
+	TEE_FreeOperation(op);
+	return res;
+}
+
 TEE_Result km_gen_key(struct km_key_param_head *kph, void *key_blob,
 		      size_t *key_blob_size)
 {
@@ -492,4 +609,10 @@ TEE_Result km_gen_key(struct km_key_param_head *kph, void *key_blob,
 out:
 	TEE_Free(raw_key);
 	return res;
+}
+
+TEE_Result km_get_key_characteristics(void *key_blob, size_t key_blob_size,
+				      struct km_key_param_head *kph)
+{
+	return decrypt_key_blob(key_blob, key_blob_size, kph, NULL);
 }
