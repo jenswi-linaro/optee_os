@@ -81,11 +81,12 @@ ta-target := $(1)
 include ta/ta.mk
 endef
 $(foreach t, $(ta-targets), $(eval $(call build-ta-target, $(t))))
-endif
 
 ifeq ($(CFG_TA_SERVICES),y)
 include ta_services/ta_services.mk
 endif
+endif #ifeq ($(CFG_WITH_USER_TA),y)
+
 
 include mk/cleandirs.mk
 
