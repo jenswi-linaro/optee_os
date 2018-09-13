@@ -568,7 +568,7 @@ void mobj_reg_shm_put(struct mobj *mobj)
 	}
 }
 
-static TEE_Result try_release_reg_shm(uint64_t cookie)
+TEE_Result mobj_reg_shm_try_release_by_cookie(uint64_t cookie)
 {
 	TEE_Result res = TEE_ERROR_BAD_PARAMETERS;
 	uint32_t exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
@@ -577,11 +577,13 @@ static TEE_Result try_release_reg_shm(uint64_t cookie)
 	if (!r || r->guarded)
 		goto out;
 
-	res = TEE_ERROR_BUSY;
-	if (refcount_val(&r->refcount) == 1) {
-		reg_shm_free_helper(r);
-		res = TEE_SUCCESS;
+	if (refcount_val(&r->refcount) != 1) {
+		res = TEE_ERROR_BUSY;
+		goto out;
 	}
+
+	reg_shm_free_helper(r);
+	res = TEE_SUCCESS;
 out:
 	cpu_spin_unlock_xrestore(&reg_shm_slist_lock, exceptions);
 
@@ -590,7 +592,7 @@ out:
 
 TEE_Result mobj_reg_shm_release_by_cookie(uint64_t cookie)
 {
-	TEE_Result res = try_release_reg_shm(cookie);
+	TEE_Result res = mobj_reg_shm_try_release_by_cookie(cookie);
 
 	if (res != TEE_ERROR_BUSY)
 		return res;
@@ -600,7 +602,7 @@ TEE_Result mobj_reg_shm_release_by_cookie(uint64_t cookie)
 	assert(shm_release_waiters);
 
 	while (true) {
-		res = try_release_reg_shm(cookie);
+		res = mobj_reg_shm_try_release_by_cookie(cookie);
 		if (res != TEE_ERROR_BUSY)
 			break;
 		condvar_wait(&shm_cv, &shm_mu);

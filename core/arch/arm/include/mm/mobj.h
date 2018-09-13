@@ -147,6 +147,7 @@ struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie);
  */
 void mobj_reg_shm_put(struct mobj *mobj);
 
+TEE_Result mobj_reg_shm_try_release_by_cookie(uint64_t cookie);
 TEE_Result mobj_reg_shm_release_by_cookie(uint64_t cookie);
 
 /**
