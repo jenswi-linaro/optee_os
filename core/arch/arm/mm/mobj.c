@@ -518,6 +518,25 @@ static struct mobj_reg_shm *reg_shm_find_unlocked(uint64_t cookie)
 	return NULL;
 }
 
+struct mobj *mobj_reg_shm_get(struct mobj *mobj)
+{
+	if (mobj) {
+		struct mobj_reg_shm *r = to_mobj_reg_shm(mobj);
+		uint32_t exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
+
+		/*
+		 * Counter is supposed to be larger than 0, if it isn't
+		 * we're in trouble.
+		 */
+		if (!refcount_inc(&r->refcount))
+			panic();
+
+		cpu_spin_unlock_xrestore(&reg_shm_slist_lock, exceptions);
+	}
+
+	return mobj;
+}
+
 struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie)
 {
 	uint32_t exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
