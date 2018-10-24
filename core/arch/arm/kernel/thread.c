@@ -23,6 +23,7 @@
 #include <mm/tee_mmu.h>
 #include <mm/tee_pager.h>
 #include <optee_msg.h>
+#include <optee_rpc_cmd.h>
 #include <smccc.h>
 #include <sm/optee_smc.h>
 #include <sm/sm.h>
@@ -1588,7 +1589,7 @@ static void thread_rpc_free(unsigned int bt, uint64_t cookie, struct mobj *mobj)
 	void *arg = NULL;
 	uint64_t carg = 0;
 	struct thread_param param = THREAD_PARAM_VALUE(IN, bt, cookie, 0);
-	uint32_t ret = get_rpc_arg(OPTEE_MSG_RPC_CMD_SHM_FREE, 1, &param,
+	uint32_t ret = get_rpc_arg(OPTEE_RPC_CMD_SHM_FREE, 1, &param,
 				   &arg, &carg);
 
 	mobj_free(mobj);
@@ -1640,7 +1641,7 @@ static struct mobj *get_rpc_alloc_res(struct optee_msg_arg *arg,
  *
  * @size:	size in bytes of shared memory buffer
  * @align:	required alignment of buffer
- * @bt:		buffer type OPTEE_MSG_RPC_SHM_TYPE_*
+ * @bt:		buffer type OPTEE_RPC_SHM_TYPE_*
  * @payload:	returned physical pointer to buffer, 0 if allocation
  *		failed.
  * @cookie:	returned cookie used when freeing the buffer
@@ -1651,7 +1652,7 @@ static struct mobj *thread_rpc_alloc(size_t size, size_t align, unsigned int bt)
 	void *arg = NULL;
 	uint64_t carg = 0;
 	struct thread_param param = THREAD_PARAM_VALUE(IN, bt, size, align);
-	uint32_t ret = get_rpc_arg(OPTEE_MSG_RPC_CMD_SHM_ALLOC, 1, &param,
+	uint32_t ret = get_rpc_arg(OPTEE_RPC_CMD_SHM_ALLOC, 1, &param,
 				   &arg, &carg);
 
 	if (ret)
@@ -1665,22 +1666,22 @@ static struct mobj *thread_rpc_alloc(size_t size, size_t align, unsigned int bt)
 
 struct mobj *thread_rpc_alloc_payload(size_t size)
 {
-	return thread_rpc_alloc(size, 8, OPTEE_MSG_RPC_SHM_TYPE_APPL);
+	return thread_rpc_alloc(size, 8, OPTEE_RPC_SHM_TYPE_APPL);
 }
 
 void thread_rpc_free_payload(struct mobj *mobj)
 {
-	thread_rpc_free(OPTEE_MSG_RPC_SHM_TYPE_APPL, mobj_get_cookie(mobj),
+	thread_rpc_free(OPTEE_RPC_SHM_TYPE_APPL, mobj_get_cookie(mobj),
 			mobj);
 }
 
 struct mobj *thread_rpc_alloc_global_payload(size_t size)
 {
-	return thread_rpc_alloc(size, 8, OPTEE_MSG_RPC_SHM_TYPE_GLOBAL);
+	return thread_rpc_alloc(size, 8, OPTEE_RPC_SHM_TYPE_GLOBAL);
 }
 
 void thread_rpc_free_global_payload(struct mobj *mobj)
 {
-	thread_rpc_free(OPTEE_MSG_RPC_SHM_TYPE_GLOBAL, mobj_get_cookie(mobj),
+	thread_rpc_free(OPTEE_RPC_SHM_TYPE_GLOBAL, mobj_get_cookie(mobj),
 			mobj);
 }
