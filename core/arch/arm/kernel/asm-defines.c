@@ -80,6 +80,10 @@ DEFINES
 	/* struct thread_core_local */
 	DEFINE(THREAD_CORE_LOCAL_X0, offsetof(struct thread_core_local, x[0]));
 	DEFINE(THREAD_CORE_LOCAL_X2, offsetof(struct thread_core_local, x[2]));
+
+	/* struct thread_smccc_res */
+	DEFINE(THREAD_SMCCC_RES_X0_OFFS, offsetof(struct thread_smccc_res, a0));
+	DEFINE(THREAD_SMCCC_RES_X2_OFFS, offsetof(struct thread_smccc_res, a2));
 #endif /*ARM64*/
 
 	/* struct thread_core_local */

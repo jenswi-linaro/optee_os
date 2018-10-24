@@ -447,6 +447,20 @@ UNWIND(	.fnstart)
 UNWIND(	.fnend)
 END_FUNC thread_smc
 
+FUNC thread_smccc , :
+UNWIND(	.fnstart)
+	mov	r12, sp
+	push	{r4-r7}
+UNWIND(	.save {r4-r7})
+	ldm	r12, {r4-r7}
+	smc	#0
+	pop	{r4-r7}
+	ldr	r12, [sp, #(4 * 4)]
+	stm	r12, {r0-r3}
+	bx	lr
+UNWIND(	.fnend)
+END_FUNC thread_smccc
+
 FUNC thread_init_vbar , :
 UNWIND(	.fnstart)
 	/* Set vector (VBAR) */

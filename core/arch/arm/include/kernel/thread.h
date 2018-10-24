@@ -651,6 +651,34 @@ unsigned long thread_smc(unsigned long func_id, unsigned long a1,
 			 unsigned long a2, unsigned long a3);
 
 /**
+ * struct thread_smccc_res - Result from SMC/HVC call
+ * @a0-a3 result values from registers 0 to 3
+ */
+struct thread_smccc_res {
+	unsigned long a0;
+	unsigned long a1;
+	unsigned long a2;
+	unsigned long a3;
+};
+
+/**
+ * thread_smccc() - make SMC calls
+ * @a0-a7: arguments passed in registers 0 to 7
+ * @res: result values from registers 0 to 3
+ *
+ * This function is used to make SMC calls following SMC Calling Convention.
+ * The content of the supplied param are copied to registers 0 to 7 prior
+ * to the SMC instruction. The return values are updated with the content
+ * from register 0 to 3 on return from the SMC instruction.
+ */
+void thread_smccc(unsigned long func_id, unsigned long a1, unsigned long a2,
+		  unsigned long a3, unsigned long a4, unsigned long a5,
+		  unsigned long a6, unsigned long a7,
+		  struct thread_smccc_res *res);
+
+
+
+/**
  * Allocate data for payload buffers.
  * Buffer is exported to user mode applications.
  *

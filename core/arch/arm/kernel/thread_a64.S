@@ -259,6 +259,14 @@ FUNC thread_smc , :
 	ret
 END_FUNC thread_smc
 
+FUNC thread_smccc , :
+	smc	#0
+	ldr	x4, [sp]
+	stp	x0, x1, [x4, #THREAD_SMCCC_RES_X0_OFFS]
+	stp	x2, x3, [x4, #THREAD_SMCCC_RES_X2_OFFS]
+	ret
+END_FUNC thread_smccc
+
 FUNC thread_init_vbar , :
 	msr	vbar_el1, x0
 	ret
