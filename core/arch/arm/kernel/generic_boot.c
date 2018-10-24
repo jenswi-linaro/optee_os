@@ -508,7 +508,13 @@ static int add_optee_dt_node(void *fdt)
 	if (offs < 0)
 		return -1;
 
-	ret = fdt_setprop_string(fdt, offs, "compatible", "linaro,optee-tz");
+#ifdef CFG_CORE_SPCI
+	const char comp_str[] = "linaro,optee-spci";
+#else
+	const char comp_str[] = "linaro,optee-tz";
+#endif
+
+	ret = fdt_setprop_string(fdt, offs, "compatible", comp_str);
 	if (ret < 0)
 		return -1;
 	ret = fdt_setprop_string(fdt, offs, "method", "smc");

@@ -70,6 +70,10 @@ struct thread_specific_data {
 	void *rpc_fs_payload;
 	struct mobj *rpc_fs_payload_mobj;
 	size_t rpc_fs_payload_size;
+#ifdef CFG_CORE_SPCI
+	struct optee_spci *rpc_spci;
+	struct optee_spci_param *rpc_params;
+#endif
 };
 
 struct thread_user_vfp_state {

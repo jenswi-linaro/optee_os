@@ -3,8 +3,8 @@
  * Copyright (c) 2015-2017, Linaro Limited
  */
 
-#include <arm.h>
 #include <arm64_macros.S>
+#include <arm.h>
 #include <asm.S>
 #include <generated/asm-defines.h>
 #include <keep.h>
@@ -14,6 +14,7 @@
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
+#include <spci.h>
 
 #include "thread_private.h"
 
@@ -988,7 +989,11 @@ END_FUNC el0_sync_abort
 	mrs	x1, spsr_el1
 	mrs	x2, elr_el1
 	bl	thread_state_suspend
+#ifdef CFG_CORE_SPCI
+	mov	w2, w0		/* Supply thread index */
+#else
 	mov	w4, w0		/* Supply thread index */
+#endif
 
 	/* Update core local flags */
 	/* Switch to SP_EL1 */
@@ -1005,10 +1010,17 @@ END_FUNC el0_sync_abort
 	 */
 
 	ldr	w0, =TEESMC_OPTEED_RETURN_CALL_DONE
+#ifdef CFG_CORE_SPCI
+	ldr	w1, =SPCI_INTERRUPT
+	/* w2 is already filled in above */
+	mov	w3, #0
+	mov	w4, #0
+#else
 	ldr	w1, =OPTEE_SMC_RETURN_RPC_FOREIGN_INTR
 	mov	w2, #0
 	mov	w3, #0
 	/* w4 is already filled in above */
+#endif
 	smc	#0
 	b	.	/* SMC should not return */
 .endm

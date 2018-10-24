@@ -7,8 +7,13 @@ srcs-$(CFG_GP_SOCKETS) += pta_socket.c
 else
 srcs-y += svc_dummy.c
 endif
+ifeq ($(CFG_CORE_SPCI),y)
+srcs-y += entry_spci.c
+cppflags-entry_spci.c-y += -DTEE_IMPL_GIT_SHA1=$(TEE_IMPL_GIT_SHA1)
+else
 srcs-y += entry_std.c
 srcs-y += entry_fast.c
 cppflags-entry_fast.c-y += -DTEE_IMPL_GIT_SHA1=$(TEE_IMPL_GIT_SHA1)
+endif
 srcs-y += init.c
 srcs-y += cache.c

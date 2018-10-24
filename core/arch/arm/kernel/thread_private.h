@@ -90,8 +90,10 @@ struct thread_ctx {
 #ifdef CFG_WITH_VFP
 	struct thread_vfp_state vfp_state;
 #endif
+#ifndef CFG_CORE_SPCI
 	void *rpc_arg;
 	struct mobj *rpc_mobj;
+#endif
 	struct mutex_head mutexes;
 	struct thread_specific_data tsd;
 };

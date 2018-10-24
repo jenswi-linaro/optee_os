@@ -8,6 +8,7 @@
 
 #include <arm.h>
 #include <assert.h>
+#include <io.h>
 #include <keep.h>
 #include <kernel/asan.h>
 #include <kernel/misc.h>
@@ -24,9 +25,11 @@
 #include <mm/tee_pager.h>
 #include <optee_msg.h>
 #include <optee_rpc_cmd.h>
+#include <optee_spci.h>
 #include <smccc.h>
 #include <sm/optee_smc.h>
 #include <sm/sm.h>
+#include <spci.h>
 #include <tee/tee_cryp_utl.h>
 #include <tee/tee_fs_rpc.h>
 #include <trace.h>
@@ -142,7 +145,9 @@ static uint8_t thread_user_kdata_page[
 #endif
 
 static unsigned int thread_global_lock = SPINLOCK_UNLOCK;
+#ifndef CFG_CORE_SPCI
 static bool thread_prealloc_rpc_cache;
+#endif
 
 static unsigned int thread_rpc_pnum;
 
@@ -442,7 +447,11 @@ static void thread_alloc_and_run(struct thread_smc_args *args)
 	unlock_global();
 
 	if (!found_thread) {
+#ifdef CFG_CORE_SPCI
+		args->a0 = SPCI_ETHRDLMT;
+#else
 		args->a0 = OPTEE_SMC_RETURN_ETHREAD_LIMIT;
+#endif
 		return;
 	}
 
@@ -518,7 +527,11 @@ static bool is_user_mode(struct thread_ctx_regs *regs)
 
 static void thread_resume_from_rpc(struct thread_smc_args *args)
 {
+#ifdef CFG_CORE_SPCI
+	size_t n = args->a1; /* thread id */
+#else
 	size_t n = args->a3; /* thread id */
+#endif
 	struct thread_core_local *l = thread_get_core_local();
 	uint32_t rv = 0;
 
@@ -569,16 +582,26 @@ void thread_handle_fast_smc(struct thread_smc_args *args)
 	assert(thread_get_exceptions() == THREAD_EXCP_ALL);
 }
 
+static bool is_resume_fid(uint32_t fid)
+{
+#ifdef CFG_CORE_SPCI
+	return fid == SPCI_REQUEST_RESUME_32 || fid == SPCI_REQUEST_RESUME_64;
+#else
+	return fid == OPTEE_SMC_CALL_RETURN_FROM_RPC;
+#endif
+}
+
 void thread_handle_std_smc(struct thread_smc_args *args)
 {
 	thread_check_canaries();
 
-	if (args->a0 == OPTEE_SMC_CALL_RETURN_FROM_RPC)
+	if (is_resume_fid(args->a0))
 		thread_resume_from_rpc(args);
 	else
 		thread_alloc_and_run(args);
 }
 
+#ifndef CFG_CORE_SPCI
 /**
  * Free physical memory previously allocated with thread_rpc_alloc_arg()
  *
@@ -595,6 +618,7 @@ static void thread_rpc_free_arg(uint64_t cookie)
 		thread_rpc(rpc_args);
 	}
 }
+#endif
 
 /*
  * Helper routine for the assembly function thread_std_smc_entry()
@@ -604,18 +628,29 @@ static void thread_rpc_free_arg(uint64_t cookie)
  */
 void __weak __thread_std_smc_entry(struct thread_smc_args *args)
 {
+#ifdef CFG_CORE_SPCI
+	const uint32_t success = SPCI_SUCCESS;
+#else
+	const uint32_t success = OPTEE_SMC_RETURN_OK;
+#endif
+
 	thread_std_smc_handler_ptr(args);
 
-	if (args->a0 == OPTEE_SMC_RETURN_OK) {
+	if (args->a0 == success) {
 		struct thread_ctx *thr = threads + thread_get_id();
 
 		tee_fs_rpc_cache_clear(&thr->tsd);
+#ifdef CFG_CORE_SPCI
+		thr->tsd.rpc_spci = NULL;
+		thr->tsd.rpc_params = NULL;
+#else
 		if (!thread_prealloc_rpc_cache) {
 			thread_rpc_free_arg(mobj_get_cookie(thr->rpc_mobj));
 			mobj_free(thr->rpc_mobj);
 			thr->rpc_arg = 0;
 			thr->rpc_mobj = NULL;
 		}
+#endif
 	}
 }
 
@@ -1313,6 +1348,168 @@ void thread_rem_mutex(struct mutex *m)
 	TAILQ_REMOVE(&threads[ct].mutexes, m, link);
 }
 
+#ifdef CFG_CORE_SPCI
+static uint32_t get_rpc_arg(uint32_t cmd, size_t num_params,
+			    struct thread_param *params,
+			    struct optee_spci **arg_ret)
+{
+	struct thread_specific_data *tsd = thread_get_tsd();
+	struct optee_spci *arg = tsd->rpc_spci;
+	struct optee_spci_param *sp = tsd->rpc_params;
+
+	assert(arg);
+	if (num_params > THREAD_RPC_MAX_NUM_PARAMS)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	arg->rpc_cmd = cmd;
+	arg->rpc_num_params = num_params;
+	arg->rpc_ret = TEE_ERROR_GENERIC;
+
+	for (size_t n = 0; n < num_params; n++) {
+		switch (params[n].attr) {
+		case THREAD_PARAM_ATTR_NONE:
+			sp[n].attr = OPTEE_SPCI_ATTR_TYPE_NONE;
+			break;
+		case THREAD_PARAM_ATTR_VALUE_IN:
+		case THREAD_PARAM_ATTR_VALUE_OUT:
+		case THREAD_PARAM_ATTR_VALUE_INOUT:
+			sp[n].attr = params[n].attr -
+				     THREAD_PARAM_ATTR_VALUE_IN +
+				     OPTEE_SPCI_ATTR_TYPE_VALUE_INPUT;
+			sp[n].u.value.a = params[n].u.value.a;
+			sp[n].u.value.b = params[n].u.value.b;
+			sp[n].u.value.c = params[n].u.value.c;
+			break;
+		case THREAD_PARAM_ATTR_MEMREF_IN:
+		case THREAD_PARAM_ATTR_MEMREF_OUT:
+		case THREAD_PARAM_ATTR_MEMREF_INOUT:
+			sp[n].attr = params[n].attr -
+				     THREAD_PARAM_ATTR_MEMREF_IN +
+				     OPTEE_SPCI_ATTR_TYPE_MEMREF_INPUT;
+			sp[n].u.memref.shm_ref =
+				mobj_get_cookie(params[n].u.memref.mobj);
+			sp[n].u.memref.offs = params[n].u.memref.offs;
+			sp[n].u.memref.size = params[n].u.memref.size;
+			break;
+		default:
+			return TEE_ERROR_BAD_PARAMETERS;
+		}
+	}
+
+	if (arg_ret)
+		*arg_ret = arg;
+
+	return TEE_SUCCESS;
+}
+
+static void spci_rpc(void)
+{
+	uint32_t rpc_args[THREAD_RPC_NUM_ARGS] = {
+		SPCI_QUEUED, thread_get_id(),
+	};
+
+	thread_rpc(rpc_args);
+}
+
+uint32_t thread_rpc_cmd(uint32_t cmd, size_t num_params,
+			struct thread_param *params)
+{
+	/* The source CRYPTO_RNG_SRC_JITTER_RPC is safe to use here */
+	plat_prng_add_jitter_entropy(CRYPTO_RNG_SRC_JITTER_RPC,
+				     &thread_rpc_pnum);
+
+	struct optee_spci *arg = NULL;
+	uint32_t ret = get_rpc_arg(cmd, num_params, params, &arg);
+
+	if (ret)
+		return ret;
+
+	spci_rpc();
+
+	struct optee_spci_param *osp = thread_get_tsd()->rpc_params;
+
+	for (size_t n = 0; n < num_params; n++) {
+		switch (params[n].attr) {
+		case THREAD_PARAM_ATTR_VALUE_OUT:
+		case THREAD_PARAM_ATTR_VALUE_INOUT:
+			params[n].u.value.a = osp[n].u.value.a;
+			params[n].u.value.b = osp[n].u.value.b;
+			params[n].u.value.c = osp[n].u.value.c;
+			break;
+		case THREAD_PARAM_ATTR_MEMREF_OUT:
+		case THREAD_PARAM_ATTR_MEMREF_INOUT:
+			params[n].u.memref.size = osp[n].u.memref.size;
+			break;
+		default:
+			break;
+		}
+	}
+
+	return arg->rpc_ret;
+}
+
+/**
+ * Free physical memory previously allocated with thread_rpc_alloc()
+ *
+ * @cookie:	cookie received when allocating the buffer
+ * @bt:		must be the same as supplied when allocating
+ * @mobj:	mobj that describes allocated buffer
+ *
+ * This function also frees corresponding mobj.
+ */
+static void thread_rpc_free(unsigned int bt, uint64_t cookie, struct mobj *mobj)
+{
+	mobj_free(mobj);
+
+	struct thread_param tpm = THREAD_PARAM_VALUE(IN, bt, cookie, 0);
+	uint32_t ret = get_rpc_arg(OPTEE_RPC_CMD_SHM_FREE, 1, &tpm, NULL);
+
+	if (!ret)
+		spci_rpc();
+}
+
+/**
+ * Allocates shared memory buffer via RPC
+ *
+ * @size:	size in bytes of shared memory buffer
+ * @align:	required alignment of buffer
+ * @bt:		buffer type OPTEE_RPC_SHM_TYPE_*
+ * @payload:	returned physical pointer to buffer, 0 if allocation
+ *		failed.
+ * @cookie:	returned cookie used when freeing the buffer
+ */
+static struct mobj *thread_rpc_alloc(size_t size, size_t align, unsigned int bt)
+{
+	struct optee_spci *arg = NULL;
+	struct optee_spci_param *osp = thread_get_tsd()->rpc_params;
+	struct thread_param tpm = THREAD_PARAM_VALUE(IN, bt, size, align);
+	uint32_t ret = get_rpc_arg(OPTEE_RPC_CMD_SHM_ALLOC, 1, &tpm, &arg);
+
+	if (ret)
+		return NULL;
+
+	spci_rpc();
+
+	if (arg->rpc_ret || arg->rpc_num_params != 1)
+		return NULL;
+
+	if (osp->attr != OPTEE_SPCI_ATTR_TYPE_MEMREF_OUTPUT)
+		return NULL;
+
+	uint64_t cookie = READ_ONCE(osp->u.memref.shm_ref);
+	struct mobj *mobj = mobj_reg_shm_get_by_cookie(cookie);
+
+	if (mobj_reg_shm_inc_map(mobj)) {
+		thread_rpc_free(bt, cookie, mobj);
+		return NULL;
+	}
+
+	assert(mobj_is_nonsec(mobj));
+
+	return mobj;
+}
+#else /*!CFG_CORE_SPCI*/
+
 bool thread_disable_prealloc_rpc_cache(uint64_t *cookie)
 {
 	bool rv;
@@ -1663,6 +1860,7 @@ static struct mobj *thread_rpc_alloc(size_t size, size_t align, unsigned int bt)
 
 	return get_rpc_alloc_res(arg, bt);
 }
+#endif
 
 struct mobj *thread_rpc_alloc_payload(size_t size)
 {

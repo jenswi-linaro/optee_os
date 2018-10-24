@@ -9,6 +9,7 @@
 #include <tee_api_types.h>
 #include <tee/arch_svc.h>
 #include <tee/entry_std.h>
+#include <tee/entry_spci.h>
 
 #include "thread_private.h"
 
@@ -35,5 +36,11 @@ void __section(".text.dummy.__wq_rpc")
 __wq_rpc(uint32_t func __unused, int id __unused,
 	 const void *sync_obj __unused, int owner __unused,
 	 const char *fname __unused, int lineno  __unused)
+{
+}
+
+
+void __section(".text.dummy.tee_entry_spci_request")
+tee_entry_spci_request(struct thread_smc_args *args __unused)
 {
 }
