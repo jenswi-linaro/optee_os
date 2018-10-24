@@ -7,6 +7,7 @@
 #include <initcall.h>
 #include <keep.h>
 #include <kernel/linker.h>
+#include <kernel/misc.h>
 #include <kernel/mutex.h>
 #include <kernel/panic.h>
 #include <kernel/refcount.h>
@@ -18,6 +19,7 @@
 #include <mm/tee_pager.h>
 #include <optee_msg.h>
 #include <sm/optee_smc.h>
+#include <spci.h>
 #include <stdlib.h>
 #include <tee_api_types.h>
 #include <types_ext.h>
@@ -537,7 +539,7 @@ struct mobj *mobj_reg_shm_get(struct mobj *mobj)
 	return mobj;
 }
 
-struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie)
+static struct mobj *reg_shm_get_by_cookie(uint64_t cookie)
 {
 	uint32_t exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
 	struct mobj_reg_shm *r = reg_shm_find_unlocked(cookie);
@@ -557,6 +559,54 @@ struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie)
 		return &r->mobj;
 
 	return NULL;
+}
+
+static struct mobj *reg_shm_create_with_cookie(uint64_t cookie __maybe_unused)
+{
+#ifdef CFG_CORE_SPCI
+	struct thread_smccc_res res;
+
+	thread_smccc(SPCI_GET_SHM_INFO, cookie, 0, 0, 0, 0, 0, 0, &res);
+	if (res.a0)
+		return NULL;
+
+	size_t num_pages = res.a3;
+	paddr_t *pages = malloc(num_pages * sizeof(paddr_t));
+
+	if (!pages)
+		return NULL;
+
+	*pages = reg_pair_to_64(res.a1, res.a2);
+	paddr_t page_offs = (*pages) & SMALL_PAGE_MASK;
+
+	*pages &= ~(paddr_t)SMALL_PAGE_MASK;
+	for (size_t n = 1; n < num_pages; n++)
+		pages[n] = pages[n - 1] + SMALL_PAGE_SIZE;
+
+	struct mobj *mobj = mobj_reg_shm_alloc(pages, num_pages, page_offs,
+					       cookie);
+
+	free(pages);
+
+	if (mobj) {
+		mobj_reg_shm_get(mobj);
+		mobj_reg_shm_unguard(mobj);
+	}
+
+	return mobj;
+#else
+	return NULL;
+#endif
+}
+
+struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie)
+{
+	struct mobj *mobj = reg_shm_get_by_cookie(cookie);
+
+	if (mobj)
+		return mobj;
+
+	return reg_shm_create_with_cookie(cookie);
 }
 
 void mobj_reg_shm_put(struct mobj *mobj)
