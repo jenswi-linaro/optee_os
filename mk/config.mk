@@ -332,3 +332,7 @@ CFG_TA_MBEDTLS ?= y
 # Compile the TA library mbedTLS with self test functions, the functions
 # need to be called to test anything
 CFG_TA_MBEDTLS_SELF_TEST ?= y
+
+# Enable support for the static non-secure shared memory area,
+# MEM_AREA_NSEC_SHM
+CFG_CORE_NSEC_SHM_AREA ?= y

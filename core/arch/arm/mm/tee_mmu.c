@@ -862,6 +862,7 @@ void teecore_init_ta_ram(void)
 		    TEE_MM_POOL_NO_FLAGS);
 }
 
+#ifdef CFG_CORE_NSEC_SHM_AREA
 void teecore_init_pub_ram(void)
 {
 	vaddr_t s;
@@ -887,6 +888,7 @@ void teecore_init_pub_ram(void)
 	default_nsec_shm_paddr = virt_to_phys((void *)s);
 	default_nsec_shm_size = e - s;
 }
+#endif /*CFG_CORE_NSEC_SHM_AREA*/
 
 uint32_t tee_mmu_user_get_cache_attr(struct user_ta_ctx *utc, void *va)
 {

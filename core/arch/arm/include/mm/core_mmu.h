@@ -238,9 +238,11 @@ struct core_mmu_phys_mem {
 				   (size), phys_ddr_overall_section,\
 				   __COUNTER__)
 
+#ifdef CFG_CORE_NSEC_SHM_AREA
 /* Default NSec shared memory allocated from NSec world */
 extern unsigned long default_nsec_shm_paddr;
 extern unsigned long default_nsec_shm_size;
+#endif
 
 void core_init_mmu_map(void);
 void core_init_mmu_regs(void);

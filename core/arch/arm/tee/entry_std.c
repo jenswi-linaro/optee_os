@@ -31,7 +31,9 @@
 static struct tee_ta_session_head tee_open_sessions =
 TAILQ_HEAD_INITIALIZER(tee_open_sessions);
 
+#ifdef CFG_CORE_NSEC_SHM_AREA
 static struct mobj *shm_mobj;
+#endif
 #ifdef CFG_SECURE_DATA_PATH
 static struct mobj **sdp_mem_mobjs;
 #endif
@@ -84,9 +86,11 @@ static TEE_Result set_tmem_param(const struct optee_msg_param_tmem *tmem,
 		return TEE_SUCCESS;
 	}
 
+#ifdef CFG_CORE_NSEC_SHM_AREA
 	/* Belongs to nonsecure shared memory? */
 	if (param_mem_from_mobj(mem, shm_mobj, pa, sz))
 		return TEE_SUCCESS;
+#endif
 
 #ifdef CFG_SECURE_DATA_PATH
 	/* Belongs to SDP memories? */
@@ -573,11 +577,13 @@ void __weak tee_entry_std(struct thread_smc_args *smc_args)
 
 static TEE_Result default_mobj_init(void)
 {
+#ifdef CFG_CORE_NSEC_SHM_AREA
 	shm_mobj = mobj_phys_alloc(default_nsec_shm_paddr,
 				   default_nsec_shm_size, SHM_CACHE_ATTRS,
 				   CORE_MEM_NSEC_SHM);
 	if (!shm_mobj)
 		panic("Failed to register shared memory");
+#endif
 
 #ifdef CFG_SECURE_DATA_PATH
 	sdp_mem_mobjs = core_sdp_mem_create_mobjs();

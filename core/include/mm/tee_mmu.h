@@ -99,7 +99,11 @@ uintptr_t tee_mmu_get_load_addr(const struct tee_ta_ctx *const ctx);
 
 /* init some allocation pools */
 void teecore_init_ta_ram(void);
+#ifdef CFG_CORE_NSEC_SHM_AREA
 void teecore_init_pub_ram(void);
+#else
+static inline void teecore_init_pub_ram(void) { }
+#endif
 
 uint32_t tee_mmu_user_get_cache_attr(struct user_ta_ctx *utc, void *va);
 

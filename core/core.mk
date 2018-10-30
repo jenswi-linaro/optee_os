@@ -13,6 +13,13 @@ include core/arch/$(ARCH)/$(ARCH).mk
 PLATFORM_$(PLATFORM) := y
 PLATFORM_FLAVOR_$(PLATFORM_FLAVOR) := y
 
+ifeq ($(CFG_CORE_SPCI),y)
+# With SPCI we're not using the static non-secure shared memory area with
+# MEM_AREA_NSEC_SHM
+CFG_CORE_NSEC_SHM_AREA := n
+$(call force,CFG_CORE_NSEC_SHM_AREA,n)
+endif
+
 $(call cfg-depends-all,CFG_PAGED_USER_TA,CFG_WITH_PAGER CFG_WITH_USER_TA)
 include core/crypto.mk
 

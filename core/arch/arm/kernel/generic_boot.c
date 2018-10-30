@@ -615,19 +615,6 @@ static int config_psci(void *fdt __unused)
 }
 #endif /*CFG_PSCI_ARM32*/
 
-static void set_dt_val(void *data, uint32_t cell_size, uint64_t val)
-{
-	if (cell_size == 1) {
-		fdt32_t v = cpu_to_fdt32((uint32_t)val);
-
-		memcpy(data, &v, sizeof(v));
-	} else {
-		fdt64_t v = cpu_to_fdt64(val);
-
-		memcpy(data, &v, sizeof(v));
-	}
-}
-
 static uint64_t get_dt_val_and_advance(const void *data, size_t *offs,
 				       uint32_t cell_size)
 {
@@ -648,6 +635,20 @@ static uint64_t get_dt_val_and_advance(const void *data, size_t *offs,
 	}
 
 	return rv;
+}
+
+#ifdef CFG_CORE_NSEC_SHM_AREA
+static void set_dt_val(void *data, uint32_t cell_size, uint64_t val)
+{
+	if (cell_size == 1) {
+		fdt32_t v = cpu_to_fdt32((uint32_t)val);
+
+		memcpy(data, &v, sizeof(v));
+	} else {
+		fdt64_t v = cpu_to_fdt64(val);
+
+		memcpy(data, &v, sizeof(v));
+	}
 }
 
 static int add_res_mem_dt_node(void *fdt, const char *name, paddr_t pa,
@@ -705,6 +706,7 @@ static int add_res_mem_dt_node(void *fdt, const char *name, paddr_t pa,
 	}
 	return 0;
 }
+#endif /*CFG_CORE_NSEC_SHM_AREA*/
 
 static struct core_mmu_phys_mem *get_memory(void *fdt, size_t *nelems)
 {
@@ -762,8 +764,9 @@ static struct core_mmu_phys_mem *get_memory(void *fdt, size_t *nelems)
 	return mem;
 }
 
-static int mark_static_shm_as_reserved(void *fdt)
+static int mark_static_shm_as_reserved(void *fdt __maybe_unused)
 {
+#ifdef CFG_CORE_NSEC_SHM_AREA
 	vaddr_t shm_start;
 	vaddr_t shm_end;
 
@@ -775,6 +778,9 @@ static int mark_static_shm_as_reserved(void *fdt)
 
 	DMSG("No SHM configured");
 	return -1;
+#else
+	return 0;
+#endif
 }
 
 static void init_fdt(unsigned long phys_fdt)
