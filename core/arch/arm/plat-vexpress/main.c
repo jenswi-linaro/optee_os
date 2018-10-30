@@ -24,13 +24,19 @@
 #include <string.h>
 #include <tee/entry_fast.h>
 #include <tee/entry_std.h>
+#include <tee/entry_spci.h>
 #include <trace.h>
 
 static void main_fiq(void);
 
 static const struct thread_handlers handlers = {
+#if defined(CFG_CORE_SPCI)
+	.std_smc = tee_entry_spci_request,
+	.fast_smc = tee_entry_spci_fast,
+#else
 	.std_smc = tee_entry_std,
 	.fast_smc = tee_entry_fast,
+#endif
 	.nintr = main_fiq,
 #if defined(CFG_WITH_ARM_TRUSTED_FW)
 	.cpu_on = cpu_on_handler,
