@@ -657,6 +657,12 @@ uint32_t core_mmu_type_to_attr(enum teecore_memtypes t)
 		return attr | TEE_MATTR_SECURE | TEE_MATTR_PRW | cached;
 	case MEM_AREA_NSEC_SHM:
 		return attr | TEE_MATTR_PRW | cached;
+#if defined(CFG_WITH_SPCI)
+	case MEM_AREA_SPCI_SEC_SHM:
+		return attr | TEE_MATTR_SECURE | TEE_MATTR_PRW | cached;
+	case MEM_AREA_SPCI_NSEC_SHM:
+		return attr | TEE_MATTR_PRW | cached;
+#endif
 	case MEM_AREA_IO_NSEC:
 		return attr | TEE_MATTR_PRW | noncache;
 	case MEM_AREA_IO_SEC:
@@ -1043,6 +1049,10 @@ void core_init_mmu_map(void)
 				panic("NS_SHM can't fit in nsec_shared");
 			break;
 		case MEM_AREA_SEC_RAM_OVERALL:
+#if defined(CFG_WITH_SPCI)
+		case MEM_AREA_SPCI_SEC_SHM:
+		case MEM_AREA_SPCI_NSEC_SHM:
+#endif
 		case MEM_AREA_TEE_COHERENT:
 		case MEM_AREA_TEE_ASAN:
 		case MEM_AREA_IO_SEC:
