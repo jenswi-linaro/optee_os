@@ -29,6 +29,10 @@
 #include <stdlib.h>
 #include <trace.h>
 #include <util.h>
+#if CFG_WITH_SPCI
+#include <spci_private.h>
+#include <sp_res_desc_def.h>
+#endif
 
 #include "core_mmu_private.h"
 
@@ -833,16 +837,58 @@ static void add_pager_vaspace(struct tee_mmap_region *mmap, size_t num_elems,
 
 static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 {
+#if !CFG_WITH_SPCI
 	const struct core_mmu_phys_mem *mem;
+#endif
 	struct tee_mmap_region *map;
 	size_t last = 0;
 	size_t __maybe_unused count = 0;
 	vaddr_t va;
 	vaddr_t end;
 	bool __maybe_unused va_is_secure = true; /* any init value fits */
+#if CFG_WITH_SPCI
+	spci_msg_sp_init_t *sp_init_msg;
+	unsigned int ctr;
 
+	sp_init_msg = (spci_msg_sp_init_t *)
+		spci_arch_msg_get(SPCI_ARCH_MSG_TYPE_SP_INIT);
+
+	for (ctr = 0; ctr < sp_init_msg->mem_reg_count; ctr++) {
+		struct core_mmu_phys_mem m;
+		spci_mem_reg_desc_t *mem_reg;
+		uint32_t type, sec;
+
+		mem_reg = &sp_init_msg->mem_regs[ctr];
+
+		m.addr = mem_reg->address;
+		m.size = mem_reg->page_count * SMALL_PAGE_SIZE;
+
+		type = mem_reg->attributes >> SPCI_MEM_REG_TYPE_SHIFT;
+		type &= SPCI_MEM_REG_TYPE_MASK;
+
+		/*
+		 * Treat RX/TX buffers as RW-XN memory shared with SPM.
+		 * TODO: Remove assumption about same granularity as SPM
+		 */
+		if (type == SPCI_MEM_REG_TYPE_ARCH) {
+			sec = mem_reg->attributes >> SPCI_MEM_REG_ARCH_SEC_SHIFT;
+			sec &= SPCI_MEM_REG_ARCH_SEC_MASK;
+			DMSG("sec: %d 0x%lx\n", sec, m.addr);
+			if (sec == SPCI_MEM_REG_ARCH_SEC_S)
+				m.type = MEM_AREA_SPCI_SEC_SHM;
+			else
+				m.type = MEM_AREA_SPCI_NSEC_SHM;
+		} else {
+			enum teecore_memtypes val;
+			val = mem_reg->attributes >> SPCI_MEM_REG_IMP_VAL_SHIFT;
+			val &= SPCI_MEM_REG_IMP_VAL_MASK;
+			m.type = val;
+		}
+		m.name = teecore_memtype_name(m.type);
+#else
 	for (mem = phys_mem_map_begin; mem < phys_mem_map_end; mem++) {
 		struct core_mmu_phys_mem m = *mem;
+#endif /* CFG_WITH_SPCI */
 
 		/* Discard null size entries */
 		if (!m.size)
