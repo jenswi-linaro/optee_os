@@ -214,3 +214,56 @@ void *spci_msg_recv(int32_t status, struct thread_smc_args *args)
 		return &thread_vector_table.std_smc_entry;
 }
 
+uint32_t spci_msg_send_prepare(struct thread_eret_args *args)
+{
+	uint32_t msg_loc, msg_type, attrs;
+	spci_msg_hdr_t *msg_hdr;
+	spci_optee_msg_t *optee_msg;
+	spci_msg_buf_desc_t *tx_buf_desc;
+	spci_buf_t *tx_buf;
+	void *tmp;
+
+	msg_loc = SPCI_MSG_SEND_ATTRS_MSGLOC_NSEC;
+	msg_loc	&= SPCI_MSG_SEND_ATTRS_MSGLOC_MASK;
+	tx_buf_desc = &buf_desc[msg_loc][SPCI_MEM_REG_ARCH_TYPE_TX];
+	tx_buf = (spci_buf_t *) tx_buf_desc->va;
+
+	/* TODO: Assuming UP. Use spinlocks to protect buffer later */
+	if (tx_buf->hdr.state != SPCI_BUF_STATE_EMPTY)
+		panic();
+
+	/*
+	 * Get the common message header.
+	 * TODO: Assuming there is a single sender and receiver. Hence, sender
+	 * and receiver information is not parsed.
+	 */
+	tmp = (void *) tx_buf->buf;
+	msg_hdr = (spci_msg_hdr_t *) tmp;
+	memset(msg_hdr, 0, sizeof(*msg_hdr));
+
+	/* Set the message type. Not expecting architectural messages for now */
+	msg_type = SPCI_MSG_TYPE_IMP & SPCI_MSG_TYPE_MASK;
+	msg_type <<= SPCI_MSG_TYPE_SHIFT;
+	msg_hdr->flags |= msg_type;
+
+	/* Populate the message payload */
+	tmp = (void *) msg_hdr->payload;
+	optee_msg = (spci_optee_msg_t *) tmp;
+	memset(optee_msg, 0, sizeof(*optee_msg));
+
+	/* Copy the message */
+	memcpy(optee_msg, args, sizeof(*args));
+
+	/* Set the message length */
+	msg_hdr->length = sizeof(*args);
+
+	/* Mark the buffer as full */
+	tx_buf->hdr.state = SPCI_BUF_STATE_FULL;
+
+	/*
+	 * Populate Attributes parameter. TODO: Assume blocking behaviour
+	 * without notifications.
+	 */
+	attrs = msg_loc << SPCI_MSG_SEND_ATTRS_MSGLOC_SHIFT;
+	return attrs;
+}

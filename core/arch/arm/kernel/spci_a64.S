@@ -20,6 +20,12 @@ FUNC spci_msg_recv_invoke , :
 	b	spci_msg_loop
 END_FUNC spci_msg_recv_invoke
 
+FUNC spci_msg_send_recv_invoke , :
+	/* Move Attributes to x1 */
+	mov	x1, x0
+	mov_imm	x0, SPCI_MSG_SEND_RECV
+END_FUNC spci_msg_send_recv_invoke
+
 FUNC spci_msg_loop , :
 	/* Invoke SMC with caller provided parameters */
 	mov	x7, xzr		/* TODO: Source and target ids are 0 */
