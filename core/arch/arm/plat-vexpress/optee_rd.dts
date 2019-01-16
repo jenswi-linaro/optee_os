@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2018, Arm Limited. All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#include <util.h>
+#include <sp_res_desc_def.h>
+
+/dts-v1/;
+
+/ {
+	compatible = "arm,sp_rd";
+
+	attribute {
+		version = <0x00000001>;
+		sp_type = <RD_ATTR_TYPE_MP>;
+		pe_mpidr = <0>; /* Unused */
+		runtime_el = <RD_ATTR_RUNTIME_SEL1>;
+		exec_type = <RD_ATTR_RUNTIME>;
+		panic_policy = <RD_ATTR_PANIC_ONESHOT>;
+		xlat_granule = <RD_ATTR_XLAT_GRANULE_4KB>;
+		binary_size = <0>; /* Unused */
+		load_address = <0x00000000 0x06000000>;
+		entrypoint = <0x00000000 0x06000000>;
+	};
+
+	memory_regions {
+		TEE_RAM_RX {
+			str = "TEE_RAM_RX";
+			base = <0x00000000 0x06000000>;
+			size = <0x00000000 0x00047000>;
+			attr = <RD_MEM_NORMAL_CODE>;
+			imp_def_attr = <2>;
+		};
+
+		TEE_RAM_RW {
+			str = "TEE_RAM_RW";
+			base = <0x00000000 0x06047000>;
+			size = <0x00000000 0x001b9000>;
+			attr = <RD_MEM_NORMAL_DATA>;
+			imp_def_attr = <4>;
+		};
+
+		TA_RAM {
+			str = "TA_RAM";
+			base = <0x00000000 0x06200000>;
+			size = <0x00000000 0x01e00000>;
+			attr = <RD_MEM_NORMAL_DATA>;
+			imp_def_attr = <7>;
+		};
+
+		RAM_SEC {
+			str = "RAM_SEC";
+			base = <0x00000000 0xff000000>;
+			size = <0x00000000 0x01000000>;
+			attr = <RD_MEM_NORMAL_DATA>;
+			imp_def_attr = <12>;
+		};
+
+		IO_SEC0 {
+			str = "IO_SEC";
+			base = <0x00000000 0x2f000000>;
+			size = <0x00000000 0x00200000>;
+			attr = <RD_MEM_DEVICE>;
+			imp_def_attr = <14>;
+		};
+
+		IO_SEC1 {
+			str = "IO_SEC";
+			base = <0x00000000 0x1c000000>;
+			size = <0x00000000 0x00200000>;
+			attr = <RD_MEM_DEVICE>;
+			imp_def_attr = <14>;
+		};
+
+		IO_SEC2 {
+			str = "IO_SEC";
+			base = <0x00000000 0x2c000000>;
+			size = <0x00000000 0x00200000>;
+			attr = <RD_MEM_DEVICE>;
+			imp_def_attr = <14>;
+		};
+
+		NSEC_SHM {
+			str = "NSEC_SHM";
+			base = <0x00000000 0x83000000>;
+			size = <0x00000000 0x00200000>;
+			attr = <RD_MEM_NORMAL_CLIENT_SHARED_MEM>;
+			imp_def_attr = <8>;
+		};
+	};
+
+	notifications {
+		notification_0 {
+			attr = <0>;
+			pe = <0>;
+		};
+	};
+};
