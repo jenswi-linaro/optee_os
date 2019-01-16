@@ -101,6 +101,13 @@ struct thread_smc_args {
 	uint64_t a6;	/* Not used */
 	uint64_t a7;	/* Hypervisor Client ID */
 };
+
+struct thread_eret_args {
+	uint64_t a0;	/* Parameter */
+	uint64_t a1;	/* Parameter */
+	uint64_t a2;	/* Thread ID when returning from RPC */
+	uint64_t a3;	/* Not used */
+};
 #endif /*ARM64*/
 
 #ifdef ARM32
