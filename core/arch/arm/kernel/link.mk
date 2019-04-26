@@ -262,3 +262,11 @@ $(link-out-dir)/tee.mem_usage: $(link-out-dir)/tee.elf
 	@$(cmd-echo-silent) '  GEN     $@'
 	$(q)./scripts/mem_usage.py $< > $@
 endif
+
+cleanfiles += $(link-out-dir)/rd.dts
+ifeq ($(CFG_WITH_SPCI),y)
+all: $(link-out-dir)/rd.dts
+$(link-out-dir)/rd.dts: $(link-out-dir)/tee.elf scripts/gen_rd.py
+	@$(cmd-echo-silent) '  GEN     $@'
+	$(q)./scripts/gen_rd.py --tee_elf $< --out $@
+endif
