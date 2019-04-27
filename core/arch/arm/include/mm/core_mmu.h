@@ -95,6 +95,8 @@
  * MEM_AREA_TEE_ASAN: core address sanitizer RAM (secure, reserved to TEE)
  * MEM_AREA_TA_RAM:   Secure RAM where teecore loads/exec TA instances.
  * MEM_AREA_NSEC_SHM: NonSecure shared RAM between NSec and TEE.
+ * MEM_AREA_SPCI_SEC_SHM: Secure shared memory for RX/RX buffer
+ * MEM_AREA_SPCI_NSEC_SHM: Nonsecure shared memory for RX/RX buffer
  * MEM_AREA_RAM_NSEC: NonSecure RAM storing data
  * MEM_AREA_RAM_SEC:  Secure RAM storing some secrets
  * MEM_AREA_IO_NSEC:  NonSecure HW mapped registers
@@ -117,10 +119,8 @@ enum teecore_memtypes {
 	MEM_AREA_TEE_ASAN,
 	MEM_AREA_TA_RAM,
 	MEM_AREA_NSEC_SHM,
-#if CFG_WITH_SPCI
 	MEM_AREA_SPCI_SEC_SHM,
 	MEM_AREA_SPCI_NSEC_SHM,
-#endif
 	MEM_AREA_RAM_NSEC,
 	MEM_AREA_RAM_SEC,
 	MEM_AREA_IO_NSEC,
@@ -148,10 +148,8 @@ static inline const char *teecore_memtype_name(enum teecore_memtypes type)
 		[MEM_AREA_TEE_COHERENT] = "TEE_COHERENT",
 		[MEM_AREA_TA_RAM] = "TA_RAM",
 		[MEM_AREA_NSEC_SHM] = "NSEC_SHM",
-#if CFG_WITH_SPCI
 		[MEM_AREA_SPCI_SEC_SHM] = "SPCI_SEC_SHM",
 		[MEM_AREA_SPCI_NSEC_SHM] = "SPCI_NSEC_SHM",
-#endif
 		[MEM_AREA_RAM_NSEC] = "RAM_NSEC",
 		[MEM_AREA_RAM_SEC] = "RAM_SEC",
 		[MEM_AREA_IO_NSEC] = "IO_NSEC",
