@@ -58,7 +58,7 @@ endif
 
 srcs-$(CFG_VIRTUALIZATION) += virtualization.c
 
-ifeq ($(CFG_WITH_SPCI),1)
+ifeq ($(CFG_WITH_SPCI),y)
 srcs-y += spci.c
 srcs-$(CFG_ARM64_core) += spci_a64.S
 endif

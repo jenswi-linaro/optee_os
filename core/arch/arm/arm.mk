@@ -5,7 +5,7 @@ CFG_CORE_TZSRAM_EMUL_SIZE ?= 458752
 CFG_LPAE_ADDR_SPACE_SIZE ?= (1ull << 32)
 
 CFG_MMAP_REGIONS ?= 13
-ifeq ($(CFG_WITH_SPCI),1)
+ifeq ($(CFG_WITH_SPCI),y)
 # 4 extra regions for the secure and non-secure RX/TX buffers
 CFG_MMAP_REGIONS := $(CFG_MMAP_REGIONS) + 4
 endif
