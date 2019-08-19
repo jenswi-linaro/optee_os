@@ -12,7 +12,10 @@
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
-
+#if defined(CFG_WITH_SPCI)
+#include <generated/asm-defines.h>
+#include <spci.h>
+#endif
 	/*
 	 * Setup SP_EL0 and SPEL1, SP will be set to SP_EL0.
 	 * SP_EL0 is assigned stack_tmp_export + cpu_id * stack_tmp_stride
@@ -58,6 +61,9 @@ FUNC _start , :
 	ldr     x20, =CFG_DT_ADDR
 #else
 	mov	x20, x2		/* Save DT address */
+#endif
+#if defined(CFG_WITH_SPCI)
+	mov	x21, x1		/* Save reference to SPCI RX buffer */
 #endif
 
 	adr	x0, reset_vect_table
@@ -134,6 +140,12 @@ clear_nex_bss:
 	sub	x1, x1, x0
 	bl	dcache_inv_range
 
+#if defined(CFG_WITH_SPCI)
+	/* Pass reference to RX buffer with init. message */
+	mov	x0, x21
+	bl	spci_early_init
+#endif
+
 	/* Enable Console */
 	bl	console_init
 
@@ -142,6 +154,10 @@ clear_nex_bss:
 	bl	cpu_mmu_enable
 	bl	cpu_mmu_enable_icache
 	bl	cpu_mmu_enable_dcache
+
+#if defined(CFG_WITH_SPCI)
+	bl	spci_late_init
+#endif
 
 	mov	x0, x19		/* pagable part address */
 	mov	x1, #-1
@@ -175,11 +191,18 @@ clear_nex_bss:
 	bl 	thread_clr_boot_thread
 #endif
 
+#if defined(CFG_WITH_SPCI)
+	/* Free RX buffer */
+	//mov	x0, xzr		/* TODO: Unforgivable hack */
+	//bl	spci_msg_put
+	b	spci_msg_recv_invoke
+#else
 	/* Pass the vector address returned from main_init */
 	mov	x1, x19
 	mov	x0, #TEESMC_OPTEED_RETURN_ENTRY_DONE
 	smc	#0
 	b	.	/* SMC should not return */
+#endif
 END_FUNC _start
 KEEP_INIT _start
 

@@ -5,6 +5,10 @@ CFG_CORE_TZSRAM_EMUL_SIZE ?= 458752
 CFG_LPAE_ADDR_SPACE_SIZE ?= (1ull << 32)
 
 CFG_MMAP_REGIONS ?= 13
+ifeq ($(CFG_WITH_SPCI),y)
+# 4 extra regions for the secure and non-secure RX/TX buffers
+CFG_MMAP_REGIONS := $(CFG_MMAP_REGIONS) + 4
+endif
 CFG_RESERVED_VASPACE_SIZE ?= (1024 * 1024 * 10)
 
 ifeq ($(CFG_ARM64_core),y)
@@ -152,7 +156,9 @@ endif
 core-platform-cflags += $(arm32-platform-cflags-generic-thumb)
 core-platform-aflags += $(core_arm32-platform-aflags)
 core-platform-aflags += $(arm32-platform-aflags)
+$(call force,CFG_WITH_SPCI,n,SPCI not supported with ARM-32 yet)
 endif
+
 
 # Provide default supported-ta-targets if not set by the platform config
 ifeq (,$(supported-ta-targets))

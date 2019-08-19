@@ -28,6 +28,8 @@ srcs-$(CFG_PL310) += tee_l2cc_mutex.c
 srcs-$(CFG_ARM32_core) += thread_a32.S
 srcs-$(CFG_ARM64_core) += thread_a64.S
 srcs-y += thread.c
+srcs-y += thread_spci.c
+srcs-$(CFG_ARM64_core) += thread_spci_a64.S
 srcs-y += thread_optee_smc.c
 srcs-$(CFG_ARM32_core) += thread_optee_smc_a32.S
 srcs-$(CFG_ARM64_core) += thread_optee_smc_a64.S
@@ -58,6 +60,7 @@ srcs-$(CFG_ARM64_core) += unwind_arm64.c
 endif
 
 srcs-$(CFG_VIRTUALIZATION) += virtualization.c
+
 
 srcs-y += link_dummies.c
 

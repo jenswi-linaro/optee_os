@@ -29,6 +29,9 @@
 #include <stdlib.h>
 #include <trace.h>
 #include <util.h>
+#if defined(CFG_WITH_SPCI)
+#include <spci_private.h>
+#endif
 
 #include "core_mmu_private.h"
 
@@ -844,23 +847,136 @@ static void add_pager_vaspace(struct tee_mmap_region *mmap, size_t num_elems,
 	*end += size;
 }
 
+#ifdef CFG_WITH_SPCI
+static bool __maybe_unused check_mem(struct spci_msg_sp_init *sp_init_msg,
+				     struct core_mmu_phys_mem *mem)
+{
+	struct spci_mem_region_desc *mr = NULL;
+	unsigned int type = 0;
+	unsigned int val = 0;
+	size_t n = 0;
+
+	for (n = 0; n < sp_init_msg->mem_reg_count; n++) {
+		mr = sp_init_msg->mem_regs + n;
+		type = mr->attributes >> SPCI_MEM_REG_TYPE_SHIFT &
+		       SPCI_MEM_REG_TYPE_MASK;
+		val = mr->attributes >> SPCI_MEM_REG_IMP_VAL_SHIFT &
+		      SPCI_MEM_REG_IMP_VAL_MASK;
+		if (type != SPCI_MEM_REG_TYPE_ARCH && val == mem->type &&
+		    mr->address == mem->addr &&
+		    mr->page_count * SMALL_PAGE_SIZE == mem->size)
+			return true;
+	}
+
+	EMSG("Bad mem type %d name %s addr %#"PRIxPA" size %#"PRIxPASZ,
+	     mem->type, mem->name, mem->addr, mem->size);
+	EMSG("Expected one of:");
+	for (n = 0; n < sp_init_msg->mem_reg_count; n++) {
+		mr = sp_init_msg->mem_regs + n;
+		type = mr->attributes >> SPCI_MEM_REG_TYPE_SHIFT &
+		       SPCI_MEM_REG_TYPE_MASK;
+		val = mr->attributes >> SPCI_MEM_REG_IMP_VAL_SHIFT &
+		      SPCI_MEM_REG_IMP_VAL_MASK;
+		EMSG("type %u val %u address %"PRIx64" size %zx",
+			type, val, mr->address,
+			(size_t)mr->page_count * SMALL_PAGE_SIZE);
+	}
+
+
+	return false;
+}
+
+static bool get_next_mem(void **ptr, unsigned int *iter,
+			 struct core_mmu_phys_mem *mem)
+{
+	struct spci_msg_sp_init *sp_init_msg = NULL;
+	size_t num_pmem = phys_mem_map_end - phys_mem_map_begin;
+
+	if (!*ptr)
+		*ptr = spci_get_msg_sp_init();
+	sp_init_msg = *ptr;
+
+	while (*iter < num_pmem) {
+		*mem = phys_mem_map_begin[*iter];
+		(*iter)++;
+
+		/* Discard null size entries */
+		if (!mem->size)
+			continue;
+
+		assert(check_mem(sp_init_msg, mem));
+
+		return true;
+	}
+
+	while (*iter - num_pmem < sp_init_msg->mem_reg_count) {
+		struct spci_mem_region_desc *mr = sp_init_msg->mem_regs +
+						  *iter - num_pmem;
+		unsigned int type = mr->attributes >> SPCI_MEM_REG_TYPE_SHIFT &
+				    SPCI_MEM_REG_TYPE_MASK;
+		unsigned int sec = 0;
+
+		(*iter)++;
+		if (type != SPCI_MEM_REG_TYPE_ARCH)
+			continue;
+
+		*mem = (struct core_mmu_phys_mem){
+			.addr = mr->address,
+			.size = mr->page_count * SMALL_PAGE_SIZE,
+		};
+
+		/*
+		 * Treat RX/TX buffers as RW-XN memory shared with SPM.
+		 * TODO: Remove assumption about same granularity as SPM
+		 */
+		sec = mr->attributes >> SPCI_MEM_REG_ARCH_SEC_SHIFT &
+		      SPCI_MEM_REG_ARCH_SEC_MASK;
+
+		if (sec == SPCI_MEM_REG_ARCH_SEC_S)
+			mem->type = MEM_AREA_SPCI_SEC_SHM;
+		else
+			mem->type = MEM_AREA_SPCI_NSEC_SHM;
+		mem->name = teecore_memtype_name(mem->type);
+
+		return true;
+	}
+
+	return false;
+}
+#else
+static bool get_next_mem(void **ptr __unused, unsigned int *iter,
+			 struct core_mmu_phys_mem *mem)
+{
+	size_t num_pmem = phys_mem_map_end - phys_mem_map_begin;
+
+	while (*iter < num_pmem) {
+		*mem = phys_mem_map_begin[*iter];
+		(*iter)++;
+
+		/* Discard null size entries */
+		if (!mem->size)
+			continue;
+
+		return true;
+	}
+
+	return false;
+}
+#endif
+
 static void init_mem_map(struct tee_mmap_region *memory_map, size_t num_elems)
 {
-	const struct core_mmu_phys_mem *mem;
-	struct tee_mmap_region *map;
+	struct core_mmu_phys_mem m = { 0 };
+	unsigned int iter = 0;
+	void *ptr = NULL;
+	struct tee_mmap_region *map = 0;
 	size_t last = 0;
 	size_t __maybe_unused count = 0;
 	vaddr_t va;
 	vaddr_t end;
 	bool __maybe_unused va_is_secure = true; /* any init value fits */
 
-	for (mem = phys_mem_map_begin; mem < phys_mem_map_end; mem++) {
-		struct core_mmu_phys_mem m = *mem;
-
-		/* Discard null size entries */
-		if (!m.size)
-			continue;
-
+	while (get_next_mem(&ptr, &iter, &m)) {
 		/* Only unmapped virtual range may have a null phys addr */
 		assert(m.addr || !core_mmu_type_to_attr(m.type));
 
