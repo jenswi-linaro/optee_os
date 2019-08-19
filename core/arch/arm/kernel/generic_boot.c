@@ -1135,7 +1135,11 @@ generic_boot_init_primary(unsigned long pageable_part, unsigned long u __unused,
 			  unsigned long fdt)
 {
 	init_primary_helper(pageable_part, PADDR_INVALID, fdt);
+#ifdef CFG_WITH_SPCI
+	return NULL;
+#else
 	return &thread_vector_table;
+#endif
 }
 
 unsigned long generic_boot_cpu_on_handler(unsigned long a0 __maybe_unused,

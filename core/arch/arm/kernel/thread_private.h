@@ -219,6 +219,9 @@ void thread_lock_global(void);
 void thread_unlock_global(void);
 
 
+#ifdef CFG_WITH_SPCI
+unsigned long thread_rpc(void *msg, unsigned long len);
+#else
 /*
  * Suspends current thread and temorarily exits to non-secure world.
  * This function returns later when non-secure world returns.
@@ -242,7 +245,7 @@ void thread_handle_fast_smc(struct thread_smc_args *args);
 uint32_t thread_handle_std_smc(uint32_t a0, uint32_t a1, uint32_t a2,
 			       uint32_t a3, uint32_t a4, uint32_t a5,
 			       uint32_t a6, uint32_t a7);
-
+#endif /*!CFG_WITH_SPCI*/
 #endif /*__ASSEMBLER__*/
 
 #endif /*THREAD_PRIVATE_H*/

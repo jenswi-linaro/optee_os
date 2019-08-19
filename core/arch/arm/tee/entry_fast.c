@@ -101,6 +101,19 @@ static void tee_entry_exchange_capabilities(struct thread_smc_args *args)
 	DMSG("Dynamic shared memory is %sabled", dyn_shm_en ? "en" : "dis");
 }
 
+#ifdef CFG_WITH_SPCI
+static void tee_entry_disable_shm_cache(struct thread_smc_args *args)
+{
+	DMSG("Remove this");
+	args->a0 = OPTEE_SMC_RETURN_ENOTAVAIL;
+}
+
+static void tee_entry_enable_shm_cache(struct thread_smc_args *args)
+{
+	DMSG("Remove this");
+	args->a0 = OPTEE_SMC_RETURN_OK;
+}
+#else
 static void tee_entry_disable_shm_cache(struct thread_smc_args *args)
 {
 	uint64_t cookie;
@@ -127,6 +140,7 @@ static void tee_entry_enable_shm_cache(struct thread_smc_args *args)
 	else
 		args->a0 = OPTEE_SMC_RETURN_EBUSY;
 }
+#endif
 
 static void tee_entry_boot_secondary(struct thread_smc_args *args)
 {

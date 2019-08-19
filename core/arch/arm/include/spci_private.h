@@ -19,6 +19,7 @@ struct spci_msg_buf_desc {
 void spci_early_init(struct spci_buf *spci_rx_buf);
 void spci_late_init(void);
 struct spci_msg_sp_init *spci_get_msg_sp_init(void);
+uint32_t spci_msg_send_prepare(const void *msg, size_t msg_len);
 void spci_msg_send_recv_invoke(uint32_t attributes);
 
 #endif /* __SPCI_PRIVATE_H */
