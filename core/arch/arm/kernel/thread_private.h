@@ -220,7 +220,8 @@ void thread_unlock_global(void);
 
 
 #ifdef CFG_WITH_SPCI
-unsigned long thread_rpc(void *msg, unsigned long len);
+void thread_rpc_helper(uint32_t attrs, struct thread_ctx_regs *ctx_regs,
+		       uint32_t rv[4]);
 #else
 /*
  * Suspends current thread and temorarily exits to non-secure world.

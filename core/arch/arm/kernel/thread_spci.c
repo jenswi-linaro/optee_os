@@ -23,6 +23,10 @@
 #include "thread_private.h"
 #include "optee_spci.h"
 
+
+#define SPCI_MAX_MSG_LEN	(sizeof(struct optee_spci_std_hdr) + \
+				 OPTEE_MSG_GET_ARG_SIZE(6))
+
 /* One buffer for each security state */
 #define SPCI_MAX_BUFS		2
 #define SPCI_MAX_SEC_STATES	2
@@ -30,6 +34,7 @@ static struct spci_msg_buf_desc buf_desc[SPCI_MAX_SEC_STATES][SPCI_MAX_BUFS];
 
 /* Special message with initialisation information */
 static struct spci_msg_sp_init *sp_init_msg;
+
 
 struct spci_msg_sp_init *spci_get_msg_sp_init(void)
 {
@@ -136,6 +141,26 @@ void spci_late_init(void)
 	}
 }
 
+static void msg_put(unsigned int sec_state)
+{
+	struct spci_msg_buf_desc *rx_buf_desc = NULL;
+	struct spci_msg_hdr *msg_hdr = NULL;
+	struct spci_buf *rx_buf = NULL;
+	size_t msg_len = 0;
+
+	assert(thread_get_exceptions() & THREAD_EXCP_FOREIGN_INTR);
+	assert ((sec_state == SPCI_MEM_REG_ARCH_SEC_S) ||
+		(sec_state == SPCI_MEM_REG_ARCH_SEC_NS));
+
+	rx_buf_desc = &buf_desc[sec_state][SPCI_MEM_REG_ARCH_TYPE_RX];
+	rx_buf = (struct spci_buf *)rx_buf_desc->va;
+	msg_hdr = (void *)rx_buf->buf;
+	msg_len = MIN(READ_ONCE(msg_hdr->length), SPCI_MAX_MSG_LEN);
+
+	memset(msg_hdr, 0, sizeof(*msg_hdr) + msg_len);
+	rx_buf->hdr.state = SPCI_BUF_STATE_EMPTY;
+}
+
 static uint32_t send_optee_spci_std_hdr(uint32_t a0, uint32_t resume_info)
 {
 	struct optee_spci_std_hdr hdr = {
@@ -146,70 +171,72 @@ static uint32_t send_optee_spci_std_hdr(uint32_t a0, uint32_t resume_info)
 	return spci_msg_send_prepare(&hdr, sizeof(hdr));
 }
 
-static uint32_t handle_std_msg(struct optee_spci_std_hdr *hdr,
+static uint32_t handle_std_msg(unsigned int sec_state, void *msg,
 			       unsigned long len)
 {
-	struct optee_msg_arg *arg = NULL;
+	struct optee_spci_std_hdr *hdr = NULL;
 	uint32_t hi = 0;
 	uint32_t lo = 0;
 	uint32_t rv = 0;
 
-	if (len < sizeof(*hdr))
+	if (len < sizeof(hdr))
 		panic();
+	hdr = msg;
 
-	if (hdr->a0 != OPTEE_SMC_CALL_WITH_ARG &&
-	    hdr->a0 != OPTEE_SMC_CALL_RETURN_FROM_RPC)
-		panic();
+	assert(hdr->a0 == OPTEE_SMC_CALL_WITH_ARG ||
+	       hdr->a0 == OPTEE_SMC_CALL_RETURN_FROM_RPC);
 
-	if (hdr->a0 == OPTEE_SMC_CALL_WITH_ARG || len > sizeof(*hdr)) {
-		if (len < sizeof(*hdr) + sizeof(*arg))
-			panic();
-
-		arg = (void *)(hdr + 1);
-		if (len != sizeof(*hdr) +
-			   OPTEE_MSG_GET_ARG_SIZE(arg->num_params))
-			panic();
-	}
-
-	reg_pair_from_64((vaddr_t)hdr, &hi, &lo);
 	if (hdr->a0 == OPTEE_SMC_CALL_RETURN_FROM_RPC) {
 		uint32_t resume_info = hdr->resume_info;
 
-		if (len == sizeof(struct optee_spci_std_hdr)) {
+		if (len == sizeof(hdr)) {
 			/*
-			 * We're returning from a foreign interrupt.  This
-			 * is the last spot where a allocated hdr can be
-			 * freed since the resumed thread will have all its
-			 * registers, the entire state restored.
+			 * We're returning from a foreign interrupt. This
+			 * is the last spot where the received message can
+			 * be put since the resumed thread will have all
+			 * its registers, the entire state restored.
 			 */
-			free(hdr);
-			hdr = NULL;
+			msg_put(sec_state);
 			thread_resume_from_rpc(resume_info, 0, 0, 0, 0);
 		} else {
-			thread_resume_from_rpc(resume_info, hi, lo, len, 0);
+			/*
+			 * Message handled in thread_rpc() below after
+			 * returning from thread_rpc_helper().
+			 */
+			reg_pair_from_64((vaddr_t)msg, &hi, &lo);
+			thread_resume_from_rpc(resume_info, sec_state,
+					       hi, lo, len);
 		}
 		rv = OPTEE_SMC_RETURN_ERESUME;
 	} else {
-		thread_alloc_and_run(hi, lo, 0, 0);
+		reg_pair_from_64((vaddr_t)msg, &hi, &lo);
+		/* Message received by __thread_std_smc_entry() */
+		thread_alloc_and_run(sec_state, hi, lo, len);
 		rv = OPTEE_SMC_RETURN_ETHREAD_LIMIT;
 	}
-	free(hdr);
+	msg_put(sec_state);
 
 	return send_optee_spci_std_hdr(rv, 0);
 }
 
-static uint32_t handle_fast_msg(struct thread_smc_args *args, unsigned long len)
+static uint32_t handle_fast_msg(unsigned int sec_state, void *msg,
+				unsigned long len)
 {
-	if (len != sizeof(*args))
+	struct thread_smc_args args = { };
+
+	if (len != sizeof(args))
 		panic();
 
-	tee_entry_fast(args);
+	memcpy(&args, msg, len);
+	msg_put(sec_state);
+
+	tee_entry_fast(&args);
 
 	/* Only returning the first 4 entries */
-	return spci_msg_send_prepare(args, sizeof(*args) / 2);
+	return spci_msg_send_prepare(&args, sizeof(args) / 2);
 }
 
-static uint32_t handle_msg(void *msg, unsigned long len)
+static uint32_t handle_msg(unsigned int sec_state, void *msg, unsigned long len)
 {
 	uint32_t *a0 = msg;
 
@@ -217,24 +244,21 @@ static uint32_t handle_msg(void *msg, unsigned long len)
 		panic();
 
 	if (OPTEE_SMC_IS_FAST_CALL(*a0))
-		return handle_fast_msg(msg, len);
+		return handle_fast_msg(sec_state, msg, len);
 	else
-		return handle_std_msg(msg, len);
+		return handle_std_msg(sec_state, msg, len);
 }
 
 /* Only called from assembly */
 uint32_t spci_msg_recv(int32_t status);
 uint32_t spci_msg_recv(int32_t status)
 {
-	size_t max_msg_len = sizeof(struct optee_spci_std_hdr) +
-			     OPTEE_MSG_GET_ARG_SIZE(6);
 	size_t msg_len = 0;
 	uint32_t msg_loc = 0;
 	uint32_t  msg_type = 0;
 	struct spci_msg_hdr *msg_hdr = NULL;
 	struct spci_msg_buf_desc *rx_buf_desc = NULL;
 	struct spci_buf *rx_buf = NULL;
-	void *p = NULL;
 
 	assert(thread_get_exceptions() & THREAD_EXCP_FOREIGN_INTR);
 
@@ -275,22 +299,10 @@ uint32_t spci_msg_recv(int32_t status)
 		panic();
 
 	msg_len = READ_ONCE(msg_hdr->length);
-	if (msg_len > max_msg_len)
+	if (msg_len > SPCI_MAX_MSG_LEN)
 		panic();
 
-	p = calloc(1, max_msg_len);
-	if (!p)
-		panic();
-
-	memcpy(p, (void *)msg_hdr->payload, msg_len);
-
-	/* Zero the message memory */
-	memset(msg_hdr, 0, sizeof(*msg_hdr) + msg_len);
-
-	/* Release the copied message */
-	rx_buf->hdr.state = SPCI_BUF_STATE_EMPTY;
-
-	return handle_msg(p, msg_len);
+	return handle_msg(msg_loc, msg_hdr->payload, msg_len);
 }
 
 uint32_t spci_msg_send_prepare(const void *msg, size_t msg_len)
@@ -353,17 +365,35 @@ uint32_t spci_msg_send_prepare_foreign_intr(uint32_t thread_index)
  * Note: this function is weak just to make it possible to exclude it from
  * the unpaged area.
  */
-uint32_t __weak __thread_std_smc_entry(uint32_t a0, uint32_t a1,
-				       uint32_t a3 __unused,
-				       uint32_t a4 __unused)
+uint32_t __weak __thread_std_smc_entry(uint32_t a0, uint32_t a1, uint32_t a2,
+				       uint32_t a3 )
 {
+	unsigned int sec_state = a0;
+	unsigned int msg_len = a3;
 	struct optee_spci_std_hdr *hdr = NULL;
 	struct optee_msg_arg *arg = NULL;
-	size_t msg_len = 0;
 	uint32_t attrs = 0;
 
-	hdr = (void *)reg_pair_to_64(a0, a1);
+	if (msg_len < sizeof(*hdr) + sizeof(*arg)) {
+		msg_put(sec_state);
+		return send_optee_spci_std_hdr(OPTEE_SMC_RETURN_EBADCMD, 0);
+	}
+
+	hdr = calloc(1, sizeof(*hdr) + msg_len);
+	if (!hdr) {
+		msg_put(sec_state);
+		return send_optee_spci_std_hdr(OPTEE_SMC_RETURN_ENOMEM, 0);
+	}
 	arg = (void *)(hdr + 1);
+
+	memcpy(hdr, (void *)reg_pair_to_64(a1, a2), msg_len);
+	msg_put(sec_state);
+	if (msg_len - sizeof(*hdr) !=
+	    OPTEE_MSG_GET_ARG_SIZE(arg->num_params)) {
+		free(hdr);
+		return send_optee_spci_std_hdr(OPTEE_SMC_RETURN_EBADCMD, 0);
+	}
+
 	hdr->a0 = tee_entry_std(arg, arg->num_params);
 
 	/*
@@ -374,11 +404,6 @@ uint32_t __weak __thread_std_smc_entry(uint32_t a0, uint32_t a1,
 	 */
 	thread_mask_exceptions(THREAD_EXCP_FOREIGN_INTR);
 
-	hdr->resume_info = 0;
-	msg_len = sizeof(*hdr);
-	if (!hdr->a0)
-		msg_len += OPTEE_MSG_GET_ARG_SIZE(arg->num_params);
-
 	attrs = spci_msg_send_prepare(hdr, msg_len);
 	free(hdr);
 
@@ -388,6 +413,29 @@ uint32_t __weak __thread_std_smc_entry(uint32_t a0, uint32_t a1,
 	 * returned.
 	 */
 	return attrs;
+}
+
+static uint32_t thread_rpc(void *msg, unsigned long len)
+{
+	uint32_t exceptions = thread_mask_exceptions(THREAD_EXCP_ALL);
+	unsigned int sec_state = 0;
+	uint32_t new_msg_len = 0;
+	uint32_t rv[4] = { 0 };
+	void *new_msg = NULL;
+
+	thread_rpc_helper(spci_msg_send_prepare(msg, len),
+			  thread_get_ctx_regs(),  rv);
+
+	sec_state = rv[0];
+	new_msg = (void *)(vaddr_t)reg_pair_to_64(rv[1], rv[2]);
+	new_msg_len = rv[3];
+
+	memcpy(msg, new_msg, MIN(len, new_msg_len));
+	msg_put(sec_state);
+
+	thread_unmask_exceptions(exceptions);
+
+	return new_msg_len;
 }
 
 static bool set_rmem(struct optee_msg_param *param,
@@ -513,20 +561,6 @@ uint32_t thread_rpc_cmd(uint32_t cmd, size_t num_params,
 	}
 
 	return arg->ret;
-}
-
-/* Called from assembly function thread_rpc() only */
-uint32_t thread_rpc_return_fixup(uint32_t hi, uint32_t lo, uint32_t len,
-				 void *orig_msg, unsigned long orig_len);
-uint32_t thread_rpc_return_fixup(uint32_t hi, uint32_t lo, uint32_t len,
-				 void *orig_msg, unsigned long orig_len)
-{
-	void *msg = (void *)(vaddr_t)reg_pair_to_64(hi, lo);
-
-	memcpy(orig_msg, msg, MIN(len, orig_len));
-	free(msg);
-
-	return len;
 }
 
 static void thread_rpc_free(unsigned int bt, uint64_t cookie, struct mobj *mobj)
