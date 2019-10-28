@@ -98,4 +98,6 @@
  */
 #define SPCI_PARAM_MBZ			U(0x0)
 
+/* Temporary place for PSCI defines to turn secondaries on and off */
+#define PSCI_CPU_ON_SMC64		U(0xc4000003)
 #endif /* __SPCI_H */
