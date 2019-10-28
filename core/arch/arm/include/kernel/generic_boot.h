@@ -85,4 +85,6 @@ void *get_external_dt(void);
 
 unsigned long get_aslr_seed(void *fdt);
 
+void spci_secondary_cpu_boot_req(vaddr_t secondary_ep, uint64_t cookie);
+
 #endif /* KERNEL_GENERIC_BOOT_H */
