@@ -545,6 +545,18 @@ TEE_Result core_mmu_map_pages(vaddr_t vstart, paddr_t *pages, size_t num_pages,
 			      enum teecore_memtypes memtype);
 
 /*
+ * core_mmu_map_pages() - map range o fpages at given virtual address
+ * @vstart:	Virtual address where mapping begins
+ * @pstart:	Physical address of the first page
+ * @num_pages:	Number of pages
+ * @memtype:	Type of memmory to be mapped
+ * @returns:	TEE_SUCCESS on success, TEE_ERROR_XXX on error
+ */
+TEE_Result core_mmu_map_contiguous_pages(vaddr_t vstart, paddr_t pstart,
+					 size_t num_pages,
+					 enum teecore_memtypes memtype);
+
+/*
  * core_mmu_unmap_pages() - remove mapping at given virtual address
  * @vstart:	Virtual address where mapping begins
  * @num_pages:	Number of pages to unmap
