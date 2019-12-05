@@ -88,8 +88,10 @@ struct thread_ctx {
 #ifdef CFG_WITH_VFP
 	struct thread_vfp_state vfp_state;
 #endif
+#ifndef CFG_WITH_SPMC
 	void *rpc_arg;
 	struct mobj *rpc_mobj;
+#endif
 	struct thread_specific_data tsd;
 };
 #endif /*__ASSEMBLER__*/
@@ -226,8 +228,12 @@ void thread_unlock_global(void);
  * The purpose of this function is to request services from non-secure
  * world.
  */
+#ifdef CFG_WITH_SPMC
+void thread_spmc_rpc(uint32_t shm_handle, uint32_t shm_offset);
+#else
 #define THREAD_RPC_NUM_ARGS     4
 void thread_rpc(uint32_t rv[THREAD_RPC_NUM_ARGS]);
+#endif
 
 /*
  * Called from assembly only, vector_fast_smc_entry(). Handles a fast SMC

@@ -201,6 +201,9 @@ struct thread_specific_data {
 	void *rpc_fs_payload;
 	struct mobj *rpc_fs_payload_mobj;
 	size_t rpc_fs_payload_size;
+#ifdef CFG_WITH_SPMC
+	struct mobj *rpc_arg_mobj;
+#endif
 
 	uint32_t abort_type;
 	uint32_t abort_descr;

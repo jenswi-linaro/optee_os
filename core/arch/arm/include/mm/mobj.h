@@ -167,6 +167,11 @@ struct mobj *mobj_phys_alloc(paddr_t pa, size_t size, uint32_t cattr,
 struct mobj *mobj_reg_shm_alloc(paddr_t *pages, size_t num_pages,
 				paddr_t page_offset, uint64_t cookie);
 
+struct mobj_reg_shm *mobj_reg_shm_new(size_t num_pages, paddr_t **pages,
+				      uint32_t *cookie);
+void mobj_reg_shm_delete(struct mobj_reg_shm *mobj_reg_shm);
+struct mobj *mobj_reg_shm_add(uint32_t cookie);
+
 /**
  * mobj_reg_shm_get_by_cookie() - get a MOBJ based on cookie
  * @cookie:	Cookie used by normal world when suppling the shared memory

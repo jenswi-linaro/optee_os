@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2016-2017, Linaro Limited
+ * Copyright (c) 2016-2019, Linaro Limited
  */
 
 #include <assert.h>
+#include <bitstring.h>
 #include <initcall.h>
 #include <keep.h>
 #include <kernel/linker.h>
@@ -45,6 +46,8 @@ struct mobj_reg_shm {
 	paddr_t pages[];
 };
 
+SLIST_HEAD(reg_shm_head, mobj_reg_shm);
+
 static size_t mobj_reg_shm_size(size_t nr_pages)
 {
 	size_t s = 0;
@@ -56,11 +59,18 @@ static size_t mobj_reg_shm_size(size_t nr_pages)
 	return s;
 }
 
-static SLIST_HEAD(reg_shm_head, mobj_reg_shm) reg_shm_list =
-	SLIST_HEAD_INITIALIZER(reg_shm_head);
+
+static struct reg_shm_head reg_shm_list = SLIST_HEAD_INITIALIZER(reg_shm_head);
 
 static unsigned int reg_shm_slist_lock = SPINLOCK_UNLOCK;
 static unsigned int reg_shm_map_lock = SPINLOCK_UNLOCK;
+
+#ifdef CFG_WITH_SPMC
+#define NUM_REG_SHMS 64
+static bitstr_t bit_decl(reg_shm_bits, NUM_REG_SHMS);
+static struct reg_shm_head reg_shm_tmp_list =
+	SLIST_HEAD_INITIALIZER(reg_shm_head);
+#endif
 
 static struct mobj_reg_shm *to_mobj_reg_shm(struct mobj *mobj);
 
@@ -216,12 +226,10 @@ static struct mobj_reg_shm *to_mobj_reg_shm_may_fail(struct mobj *mobj)
 	return container_of(mobj, struct mobj_reg_shm, mobj);
 }
 
-struct mobj *mobj_reg_shm_alloc(paddr_t *pages, size_t num_pages,
-				paddr_t page_offset, uint64_t cookie)
+
+static struct mobj_reg_shm *reg_shm_new(size_t num_pages)
 {
 	struct mobj_reg_shm *mobj_reg_shm = NULL;
-	size_t i = 0;
-	uint32_t exceptions = 0;
 	size_t s = 0;
 
 	if (!num_pages)
@@ -238,30 +246,131 @@ struct mobj *mobj_reg_shm_alloc(paddr_t *pages, size_t num_pages,
 	mobj_reg_shm->mobj.size = num_pages * SMALL_PAGE_SIZE;
 	mobj_reg_shm->mobj.phys_granule = SMALL_PAGE_SIZE;
 	refcount_set(&mobj_reg_shm->mobj.refc, 1);
-	mobj_reg_shm->cookie = cookie;
 	mobj_reg_shm->guarded = true;
 	mobj_reg_shm->num_pages = num_pages;
-	mobj_reg_shm->page_offset = page_offset;
-	memcpy(mobj_reg_shm->pages, pages, sizeof(*pages) * num_pages);
+
+	return mobj_reg_shm;
+}
+
+struct mobj_reg_shm *mobj_reg_shm_new(size_t num_pages, paddr_t **pages,
+				      uint32_t *cookie)
+{
+	struct mobj_reg_shm *mobj_reg_shm = reg_shm_new(num_pages);
+	uint32_t exceptions = 0;
+	int i = 0;
+
+	if (!mobj_reg_shm)
+		return NULL;
+
+	exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
+	bit_ffc(reg_shm_bits, NUM_REG_SHMS, &i);
+	if (i != -1) {
+		/* + 1 to avoid a cookie value 0 */
+		mobj_reg_shm->cookie = i + 1;
+		SLIST_INSERT_HEAD(&reg_shm_tmp_list, mobj_reg_shm, next);
+	}
+	cpu_spin_unlock_xrestore(&reg_shm_slist_lock, exceptions);
+
+	if (i == -1) {
+		free(mobj_reg_shm);
+		return NULL;
+	}
+
+	*pages = mobj_reg_shm->pages;
+	*cookie = mobj_reg_shm->cookie;
+	return mobj_reg_shm;
+}
+
+void mobj_reg_shm_delete(struct mobj_reg_shm *reg_shm)
+{
+	int i = reg_shm->cookie - 1;
+	uint32_t exceptions = 0;
+
+	assert(i >= 0 && i < NUM_REG_SHMS);
+
+	exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
+	assert(bit_test(reg_shm_bits, i));
+	bit_clear(reg_shm_bits, i);
+	SLIST_REMOVE(&reg_shm_tmp_list, reg_shm, mobj_reg_shm, next);
+	cpu_spin_unlock_xrestore(&reg_shm_slist_lock, exceptions);
+
+	free(reg_shm);
+}
+
+static struct mobj_reg_shm *pop_from_tmp_list(uint32_t cookie)
+{
+	struct mobj_reg_shm *reg_shm = SLIST_FIRST(&reg_shm_tmp_list);
+	struct mobj_reg_shm *p = NULL;
+
+	if (!reg_shm)
+		return NULL;
+
+	if (reg_shm->cookie == cookie) {
+		SLIST_REMOVE_HEAD(&reg_shm_tmp_list, next);
+		return reg_shm;
+	}
+
+	while (true) {
+		p = SLIST_NEXT(reg_shm, next);
+		if (!p)
+			return NULL;
+		if (p->cookie == cookie) {
+			SLIST_REMOVE_AFTER(reg_shm, next);
+			return p;
+		}
+		reg_shm = p;
+	}
+}
+
+struct mobj *mobj_reg_shm_add(uint32_t cookie)
+{
+	struct mobj_reg_shm *reg_shm = NULL;
+	uint32_t exceptions = 0;
+
+	exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
+	reg_shm = pop_from_tmp_list(cookie);
+	if (reg_shm)
+		SLIST_INSERT_HEAD(&reg_shm_list, reg_shm, next);
+	cpu_spin_unlock_xrestore(&reg_shm_slist_lock, exceptions);
+
+	if (!reg_shm)
+		return NULL;
+	return &reg_shm->mobj;
+}
+
+struct mobj *mobj_reg_shm_alloc(paddr_t *pages, size_t num_pages,
+				paddr_t page_offset, uint64_t cookie)
+{
+	struct mobj_reg_shm *reg_shm = NULL;
+	uint32_t exceptions = 0;
+	size_t i = 0;
+
+	reg_shm = reg_shm_new(num_pages);
+	if (!reg_shm)
+		return NULL;
+
+	reg_shm->cookie = cookie;
+	reg_shm->page_offset = page_offset;
+	memcpy(reg_shm->pages, pages, sizeof(*pages) * num_pages);
 
 	/* Ensure loaded references match format and security constraints */
 	for (i = 0; i < num_pages; i++) {
-		if (mobj_reg_shm->pages[i] & SMALL_PAGE_MASK)
+		if (reg_shm->pages[i] & SMALL_PAGE_MASK)
 			goto err;
 
 		/* Only Non-secure memory can be mapped there */
-		if (!core_pbuf_is(CORE_MEM_NON_SEC, mobj_reg_shm->pages[i],
+		if (!core_pbuf_is(CORE_MEM_NON_SEC, reg_shm->pages[i],
 				  SMALL_PAGE_SIZE))
 			goto err;
 	}
 
 	exceptions = cpu_spin_lock_xsave(&reg_shm_slist_lock);
-	SLIST_INSERT_HEAD(&reg_shm_list, mobj_reg_shm, next);
+	SLIST_INSERT_HEAD(&reg_shm_list, reg_shm, next);
 	cpu_spin_unlock_xrestore(&reg_shm_slist_lock, exceptions);
 
-	return &mobj_reg_shm->mobj;
+	return &reg_shm->mobj;
 err:
-	free(mobj_reg_shm);
+	free(reg_shm);
 	return NULL;
 }
 
