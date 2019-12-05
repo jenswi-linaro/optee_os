@@ -12,10 +12,6 @@
 #include <mm/mobj.h>
 #include <sys/queue.h>
 
-#ifdef CFG_CORE_SEL2_SPMC
-#include "spmc_private.h"
-#endif
-
 struct mobj_spci {
 	struct mobj mobj;
 	SLIST_ENTRY(mobj_spci) link;

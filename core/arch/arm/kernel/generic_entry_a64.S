@@ -222,6 +222,17 @@ clear_nex_bss:
 	bl 	thread_clr_boot_thread
 #endif
 
+#ifdef CFG_CORE_SPCI
+	adr	x0, cpu_on_handler
+	/*
+	 * Compensate for the load offset since cpu_on_handler() is
+	 * called with MMU off.
+	 */
+	ldr	x1, boot_mmu_config + CORE_MMU_CONFIG_LOAD_OFFSET
+	sub	x0, x0, x1
+	bl	spci_secondary_cpu_boot_req
+	b	spci_msg_wait_invoke
+#else
 	/*
 	 * Pass the vector address returned from main_init
 	 * Compensate for the load offset since cpu_on_handler() is
@@ -233,6 +244,7 @@ clear_nex_bss:
 	mov	x0, #TEESMC_OPTEED_RETURN_ENTRY_DONE
 	smc	#0
 	b	.	/* SMC should not return */
+#endif
 END_FUNC _start
 KEEP_INIT _start
 
@@ -394,8 +406,13 @@ FUNC cpu_on_handler , :
 
 	mov	x0, x19
 	mov	x1, x20
+#ifdef CFG_CORE_SPCI
+	bl	generic_boot_cpu_on_handler
+	b	spci_msg_wait_invoke
+#else
 	mov	x30, x21
 	b	generic_boot_cpu_on_handler
+#endif
 END_FUNC cpu_on_handler
 KEEP_PAGER cpu_on_handler
 
