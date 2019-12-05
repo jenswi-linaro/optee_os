@@ -7,7 +7,9 @@ else
 srcs-y += svc_dummy.c
 endif
 srcs-y += entry_std.c
+ifneq ($(CFG_WITH_SPMC),y)
 srcs-y += entry_fast.c
 cppflags-entry_fast.c-y += -DTEE_IMPL_GIT_SHA1=$(TEE_IMPL_GIT_SHA1)
+endif
 srcs-y += init.c
 srcs-y += cache.c

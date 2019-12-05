@@ -162,25 +162,7 @@ struct mobj *mobj_mm_alloc(struct mobj *mobj_parent, size_t size,
 struct mobj *mobj_phys_alloc(paddr_t pa, size_t size, uint32_t cattr,
 			     enum buf_is_attr battr);
 
-#ifdef CFG_CORE_DYN_SHM
-/* reg_shm represents TEE shared memory */
-struct mobj *mobj_reg_shm_alloc(paddr_t *pages, size_t num_pages,
-				paddr_t page_offset, uint64_t cookie);
-
-/**
- * mobj_reg_shm_get_by_cookie() - get a MOBJ based on cookie
- * @cookie:	Cookie used by normal world when suppling the shared memory
- *
- * Searches for a registered shared memory MOBJ and if one with a matching
- * @cookie is found its reference counter is increased before returning
- * the MOBJ.
- *
- * Returns a valid pointer on success or NULL on failure.
- */
-struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie);
-
-TEE_Result mobj_reg_shm_release_by_cookie(uint64_t cookie);
-
+#if defined(CFG_WITH_SPMC) || defined(CFG_CORE_DYN_SHM)
 /**
  * mobj_inc_map() - increase map count
  * @mobj:	pointer to a registered shared memory MOBJ
@@ -204,6 +186,44 @@ TEE_Result mobj_inc_map(struct mobj *mobj);
  * Returns TEE_SUCCESS on success or an error code on failure
  */
 TEE_Result mobj_dec_map(struct mobj *mobj);
+#endif
+
+
+#if defined(CFG_WITH_SPMC)
+struct mobj *mobj_spci_get_by_cookie(uint32_t cookie);
+
+uint32_t mobj_spci_register_by_cookie(uint32_t cookie);
+uint32_t mobj_spci_unregister_by_cookie(uint32_t cookie);
+
+/* Functions for SPMC */
+struct mobj_spci *mobj_spci_new(unsigned int num_regions,
+				unsigned int num_pages,
+				unsigned int page_offset);
+void mobj_spci_delete(struct mobj_spci *mobj);
+uint32_t mobj_spci_add_region(struct mobj_spci *mobj, unsigned int *idx,
+			      paddr_t pa, unsigned int num_pages);
+uint32_t mobj_spci_register(struct mobj_spci *mobj);
+struct mobj_spci *mobj_spci_unregister(uint32_t cookie);
+
+#elif defined(CFG_CORE_DYN_SHM)
+/* reg_shm represents TEE shared memory */
+struct mobj *mobj_reg_shm_alloc(paddr_t *pages, size_t num_pages,
+				paddr_t page_offset, uint64_t cookie);
+
+/**
+ * mobj_reg_shm_get_by_cookie() - get a MOBJ based on cookie
+ * @cookie:	Cookie used by normal world when suppling the shared memory
+ *
+ * Searches for a registered shared memory MOBJ and if one with a matching
+ * @cookie is found its reference counter is increased before returning
+ * the MOBJ.
+ *
+ * Returns a valid pointer on success or NULL on failure.
+ */
+struct mobj *mobj_reg_shm_get_by_cookie(uint64_t cookie);
+
+TEE_Result mobj_reg_shm_release_by_cookie(uint64_t cookie);
+
 
 /**
  * mobj_reg_shm_unguard() - unguards a reg_shm

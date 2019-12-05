@@ -15,7 +15,7 @@
 #include <mm/core_mmu.h>
 #include <platform_config.h>
 #include <sm/psci.h>
-#include <spmc_private.h>
+#include <spci.h>
 #include <stdint.h>
 #include <string.h>
 #include <trace.h>
@@ -39,6 +39,9 @@ static const uint64_t core_clus_aff_array[] = {
 static const uint8_t aff_array_entries =
 	sizeof(core_clus_aff_array)/sizeof(core_clus_aff_array[0]);
 
+/* Called from assembly only */
+void spci_secondary_cpu_boot_req(uintptr_t secondary_ep,
+				 uint64_t cookie __unused);
 void spci_secondary_cpu_boot_req(uintptr_t secondary_ep,
 				 uint64_t cookie __unused)
 {

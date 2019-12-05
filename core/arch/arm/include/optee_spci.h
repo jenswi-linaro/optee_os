@@ -35,7 +35,7 @@
 /*
  * Returns the API version implemented, currently follows the SPCI version.
  * Call register usage:
- * w3:	  Service ID, OPTEE_SPCI_GET_API_VERSION
+ * w3:    Service ID, OPTEE_SPCI_GET_API_VERSION
  * w4-w7: Not used (MBZ)
  *
  * Return register usage:
@@ -53,13 +53,13 @@
  * Trusted OS, not of the API.
  *
  * Call register usage:
- * w3:	  Service ID, OPTEE_SPCI_GET_OS_VERSION
+ * w3:    Service ID, OPTEE_SPCI_GET_OS_VERSION
  * w4-w7: Unused (MBZ)
  *
  * Return register usage:
  * w3:    CFG_OPTEE_REVISION_MAJOR
  * w4:    CFG_OPTEE_REVISION_MINOR
- * w5:	  TEE_IMPL_GIT_SHA1 (or zero if not supported)
+ * w5:    TEE_IMPL_GIT_SHA1 (or zero if not supported)
  */
 #define OPTEE_SPCI_GET_OS_VERSION	1
 
@@ -75,102 +75,87 @@
  *
  * Return register usage:
  * w3:    Error code, 0 on success
- * w4-w7: Note used (MBZ)
+ * w4:    Bit[1:0]:  Number of pages of shared memory to register with
+ *                   OPTEE_SPCI_REGISTER_RPC_SHM to support RPC
+ *        Bit[31:2]: Reserved (MBZ)
+ * w5-w7: Note used (MBZ)
  */
 #define OPTEE_SPCI_EXCHANGE_CAPABILITIES 2
 
 /*
- * Register shared memory
- *
- * Called after the memory share transaction has been started with all the
- * calls with SPCI_MEM_SHARE. OP-TEE will during this call retrieve the
- * addresses from SPM with SPCI_MEM_RETRIEVE_REQ.
- *
- * Call register usage:
- * w3:    Service ID, OPTEE_SPCI_REGISTER_SHM
- * w4:    Handle
- * w5:    Type of shared memory, OPTEE_SPCI_SHM_TYPE_*
- * w6:    Not used (MBZ)
- * w7:    Not used (MBZ)
- *
- * Return register usage:
- * w3:    Error code, 0 on success or errors as specified for
- *        SPCI_MEM_RETRIEVE_REQ
- * w4-w7: Not used (MBZ)
- */
-/* Memory which is used to hold command buffer during RPC */
-#define OPTEE_SPCI_SHM_TYPE_RPC		0
-/* Memory that can be shared with a non-secure user space application */
-#define OPTEE_SPCI_SHM_TYPE_APPL	1
-/* Memory only shared with non-secure kernel */
-#define OPTEE_SPCI_SHM_TYPE_KERNEL	2
-/* Memory shared with non-secure kernel and user space */
-#define OPTEE_SPCI_SHM_TYPE_GLOBAL	3
-#define OPTEE_SPCI_REGISTER_SHM		3
-
-/*
- * Unregister shared memory
- *
- * Called before the memory relinquish transaction has been started. This
- * call will block until OP-TEE is done using the shared memory. OP-TEE
- * will notify SPM that this peice of shared memory is not used any longer
- * with SPCI_MEM_RELINQUISH.
- *
- * Call register usage:
- * w3:    Service ID, OPTEE_SPCI_UNREGISTER_SHM
- * w4:    Global handle
- * w5:    Not used (MBZ)
- * w6:    Not used (MBZ)
- * w7:    Not used (MBZ)
- *
- * Return register usage:
- * w3:    Error code:
- *        0: success
- *        INVALID_PARAMETERS: invalid global handle
- * w4-w7: Not used (MBZ)
- */
-#define OPTEE_SPCI_UNREGISTER_SHM	4
-
-/*
- * Call with struct optee_msg_arg as argument
- *
- * Normal call register usage:
+ * Call with struct optee_msg_arg as argument register usage:
  * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
  * w4:    OPTEE_SPCI_YIELDING_CALL_START
  * w5:    Shared memory handle
  * w6:    Offset into shared memory pointing to a struct optee_msg_arg
  * w7:    Not used (MBZ)
  *
+ * Call register shared memory register usage:
+ * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
+ * w4:    OPTEE_SPCI_YIELDING_CALL_REGISTER_SHM
+ * w5:    Shared memory handle
+ * w6-w7: Not used (MBZ)
+ *
+ * Call unregister shared memory register usage:
+ * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
+ * w4:    OPTEE_SPCI_YIELDING_CALL_UNREGISTER_SHM
+ * w5:    Shared memory handle
+ * w6-w7: Not used (MBZ)
+ *
  * Resume from RPC register usage:
  * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
  * w4:    OPTEE_SPCI_YIELDING_CALL_RESUME
- * w5:    Resume info, value of w7 when OPTEE_SPCI_CALL_WITH_ARG returned
- * w6-w7: Not used (MBZ)
+ * w5:    Resume info
+ * w6:    Global handle of shared memory allocated if returning from
+ *        OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM.
+ *        If allocation failed 0.
+ *        If resuming from other RPC, not used (MBZ).
+ * w7: Not used (MBZ)
  *
- * Normal return register usage:
- * w3:	  Error code, 0 on success
+ * Normal return (yielding call is completed) register usage:
+ * w3:    Error code, 0 on success
  * w4:    OPTEE_SPCI_YIELDING_CALL_RETURN_NORMAL
  * w5-w7: Not used (MBZ)
  *
- * RPC cmd return register usage:
- * w3:	  Error code == 0
+ * Alloc SHM return (RPC from secure world) register usage:
+ * w3:    Error code == 0
+ * w4:    OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM
+ * w5:    Resume info
+ * w6:    Number of pages of shared memory
+ * w7:    Type of shared memory OPTEE_SPCI_SHM_TYPE_*
+ *
+ * Free SHM return (RPC from secure world) register usage:
+ * w3:    Error code == 0
+ * w4:    OPTEE_SPCI_YIELDING_CALL_RETURN_FREE_SHM
+ * w5:    Resume info
+ * w6:    Global handle, used to free a handle previously allocated with
+ *        OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM
+ * w7:    Type of shared memory OPTEE_SPCI_SHM_TYPE_*
+ *
+ * RPC cmd return (RPC from secure world) register usage:
+ * w3:    Error code == 0
  * w4:    OPTEE_SPCI_YIELDING_CALL_RETURN_RPC_CMD
  * w5:    Resume info
  * w6:    Shared memory handle
  * w7:    Offset into shared memory pointing to the struct optee_msg_arg used
- *	  for RPC
+ *        for RPC
  *
- * RPC cmd return register usage:
- * w3:	  Error code == 0
+ * RPC interrupt return (RPC from secure world) register usage:
+ * w3:    Error code == 0
  * w4:    OPTEE_SPCI_YIELDING_CALL_RETURN_INTERRUPT
  * w5:    Resume info
+ * w6-w7: Not used (MBZ)
  *
- * Possible error codes:
+ * Possible error codes in register w3:
  * 0:                       Success
  * SPCI_DENIED:             w4 isn't one of OPTEE_SPCI_YIELDING_CALL_START
- *                          or OPTEE_SPCI_YIELDING_CALL_RESUME
+ *                          OPTEE_SPCI_YIELDING_CALL_REGISTER_SHM,
+ *                          OPTEE_SPCI_YIELDING_CALL_UNREGISTER_SHM or
+ *                          OPTEE_SPCI_YIELDING_CALL_RESUME
  *
- * Possible error codes for OPTEE_SPCI_YIELDING_CALL_START
+ * Possible error codes for OPTEE_SPCI_YIELDING_CALL_START,
+ * OPTEE_SPCI_YIELDING_CALL_REGISTER_SHM and
+ * OPTEE_SPCI_YIELDING_CALL_UNREGISTER_SHM
  * SPCI_BUSY:               Number of OP-TEE OS threads exceeded,
  *                          try again later
  * SPCI_DENIED:             RPC shared memory object not found
@@ -180,12 +165,18 @@
  * SPCI_INVALID_PARAMETER:  Bad resume info
  *
  */
-#define OPTEE_SPCI_YIELDING_CALL_START			0
-#define OPTEE_SPCI_YIELDING_CALL_RESUME			1
+#define OPTEE_SPCI_YIELDING_CALL_WITH_ARG		0
+#define OPTEE_SPCI_YIELDING_CALL_REGISTER_SHM		1
+#define OPTEE_SPCI_YIELDING_CALL_UNREGISTER_SHM		2
+#define OPTEE_SPCI_YIELDING_CALL_RESUME			3
 #define OPTEE_SPCI_YIELDING_CALL_RETURN_NORMAL		0
-#define OPTEE_SPCI_YIELDING_CALL_RETURN_RPC_CMD		1
-#define OPTEE_SPCI_YIELDING_CALL_RETURN_INTERRUPT	2
-#define OPTEE_SPCI_YIELDING_CALL	5
+#define OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM	1
+#define OPTEE_SPCI_YIELDING_CALL_RETURN_FREE_SHM	2
+#define OPTEE_SPCI_YIELDING_CALL_RETURN_RPC_CMD		3
+#define OPTEE_SPCI_YIELDING_CALL_RETURN_INTERRUPT	4
+#define OPTEE_SPCI_SHM_TYPE_APPLICATION			0
+#define OPTEE_SPCI_SHM_TYPE_KERNEL			1
+#define OPTEE_SPCI_YIELDING_CALL	6
 
 #endif /*__OPTEE_SPCI_H*/
 
