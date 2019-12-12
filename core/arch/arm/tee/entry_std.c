@@ -483,7 +483,7 @@ uint32_t __tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 	uint32_t rv = OPTEE_SMC_RETURN_OK;
 
 	/* Enable foreign interrupts for STD calls */
-	thread_set_foreign_intr(true);
+	//thread_set_foreign_intr(true);
 	switch (arg->cmd) {
 	case OPTEE_MSG_CMD_OPEN_SESSION:
 		entry_open_session(arg, num_params);
