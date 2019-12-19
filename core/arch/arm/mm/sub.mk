@@ -9,7 +9,11 @@ endif
 srcs-y += tee_mm.c
 srcs-y += pgt_cache.c
 srcs-y += mobj.c
+ifeq ($(CFG_CORE_SPCI),y)
+srcs-y += mobj_spci.c
+else
 srcs-$(CFG_CORE_DYN_SHM) += mobj_dyn_shm.c
+endif
 
 ifeq ($(CFG_SYSCALL_FTRACE),y)
 # We would not like to profile MMU APIs as these are used to switch TA
