@@ -238,6 +238,7 @@ struct thread_rpc_arg {
 		} call;
 		struct {
 			uint32_t w6;
+			uint32_t w7;
 		} ret;
 		uint32_t pad[THREAD_RPC_NUM_ARGS];
 	};

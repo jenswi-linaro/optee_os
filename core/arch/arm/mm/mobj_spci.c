@@ -24,6 +24,10 @@ struct mobj_spci {
 	paddr_t pages[];
 };
 
+struct get_by_cookie_param {
+	uint32_t cookie;
+	unsigned int page_count;
+};
 
 SLIST_HEAD(mobj_spci_head, mobj_spci);
 
@@ -109,6 +113,15 @@ struct mobj_spci *mobj_spci_new(unsigned int num_pages,
 static bool cmp_cookie(struct mobj_spci *ms, vaddr_t cookie)
 {
 	return ms->cookie == cookie;
+}
+
+static bool cmp_get_by_cookie_param(struct mobj_spci *ms,
+				    vaddr_t get_by_cookie_param)
+{
+	struct get_by_cookie_param *arg = (void *)get_by_cookie_param;
+
+	return ms->cookie == arg->cookie &&
+	       ms->mobj.size / SMALL_PAGE_SIZE == arg->page_count;
 }
 
 static bool cmp_ptr(struct mobj_spci *ms, vaddr_t ptr)
@@ -220,30 +233,6 @@ struct mobj_spci *mobj_spci_mem_reclaim(uint32_t cookie)
 	return ms;
 }
 
-uint32_t mobj_spci_register_by_cookie(uint32_t cookie)
-{
-	struct mobj *mobj = NULL;
-
-	mobj = mobj_spci_get_by_cookie(cookie);
-	if (mobj) {
-		struct mobj_spci *ms = to_mobj_spci(mobj);
-		uint32_t exceptions = cpu_spin_lock_xsave(&shm_lock);
-
-		if (ms->registered_by_cookie) {
-			mobj = NULL;
-		} else {
-			assert(!ms->unregistered_by_cookie);
-			ms->registered_by_cookie = true;
-		}
-
-		cpu_spin_unlock_xrestore(&shm_lock, exceptions);
-	}
-
-	if (!mobj)
-		return TEE_ERROR_ITEM_NOT_FOUND;
-	return TEE_SUCCESS;
-}
-
 static void unmap_helper(struct mobj_spci *ms)
 {
 	if (ms->mm) {
@@ -293,25 +282,38 @@ uint32_t mobj_spci_unregister_by_cookie(uint32_t cookie)
 	return res;
 }
 
-struct mobj *mobj_spci_get_by_cookie(uint32_t cookie)
+
+
+struct mobj *mobj_spci_get_by_cookie(uint32_t cookie,
+				     unsigned int internal_offs,
+				     unsigned int page_count)
 {
 	struct mobj_spci *ms = NULL;
 	uint32_t exceptions = 0;
 
 	exceptions = cpu_spin_lock_xsave(&shm_lock);
 
-	ms = pop_from_list(&shm_inactive_head, cmp_cookie, cookie);
+	ms = find_in_list(&shm_head, cmp_cookie, cookie);
 	if (ms) {
-		assert(refcount_val(&ms->mobj.refc) == 0);
-		assert(!ms->unregistered_by_cookie);
-		refcount_set(&ms->mobj.refc, 1);
-		SLIST_INSERT_HEAD(&shm_head, ms, link);
+		mobj_get(&ms->mobj);
 	} else {
-		ms = find_in_list(&shm_head, cmp_cookie, cookie);
-		if (ms)
-			mobj_get(&ms->mobj);
+		struct get_by_cookie_param arg = {
+			.cookie = cookie,
+			.page_count = page_count,
+		};
+		ms = pop_from_list(&shm_inactive_head, cmp_get_by_cookie_param,
+				   (vaddr_t)&arg);
+		if (!ms) {
+			EMSG("cannot find %#"PRIx32, cookie);
+		}
+		if (ms) {
+			assert(refcount_val(&ms->mobj.refc) == 0);
+			assert(!ms->unregistered_by_cookie);
+			refcount_set(&ms->mobj.refc, 1);
+			ms->page_offset = internal_offs;
+			SLIST_INSERT_HEAD(&shm_head, ms, link);
+		}
 	}
-
 
 	cpu_spin_unlock_xrestore(&shm_lock, exceptions);
 

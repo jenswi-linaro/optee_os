@@ -83,18 +83,25 @@
 #define OPTEE_SPCI_EXCHANGE_CAPABILITIES 2
 
 /*
- * Call with struct optee_msg_arg as argument register usage:
+ * Call with struct optee_msg_arg as argument in the supplied shared memory
+ * with a zero internal offset and normal cached memory attributes.
+ * Register usage:
  * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
  * w4:    OPTEE_SPCI_YIELDING_CALL_START
  * w5:    Shared memory handle
  * w6:    Offset into shared memory pointing to a struct optee_msg_arg
- * w7:    Not used (MBZ)
+ * w7:    Page count
  *
- * Call register shared memory register usage:
+ * Call to register shared memory memory. The data is supplied in shared
+ * memory with a zero internal offset and normal cached memory attributes.
+ * The data is formatted as described in SPCI 1.0 Beta1 Table 137 "
+ * Descriptor to retrieve a donated, lent or shared memory region".
+ * Register usage:
  * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
  * w4:    OPTEE_SPCI_YIELDING_CALL_REGISTER_SHM
  * w5:    Shared memory handle
- * w6-w7: Not used (MBZ)
+ * w6:    Offset into shared memory pointing the table
+ * w7:    Page count
  *
  * Call unregister shared memory register usage:
  * w3:    Service ID, OPTEE_SPCI_YIELDING_CALL
@@ -109,8 +116,11 @@
  * w6:    Global handle of shared memory allocated if returning from
  *        OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM.
  *        If allocation failed 0.
- *        If resuming from other RPC, not used (MBZ).
- * w7: Not used (MBZ)
+ *        If resuming from another RPC, not used (MBZ).
+ * w7:    Internal offset from start address of shared memory if returning
+ *        from OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM. If internal
+ *        offset > 0 then one more page than requested has been allocated.
+ *        If resuming from another RPC, not used (MBZ).
  *
  * Normal return (yielding call is completed) register usage:
  * w3:    Error code, 0 on success

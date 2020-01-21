@@ -190,9 +190,10 @@ TEE_Result mobj_dec_map(struct mobj *mobj);
 
 
 #if defined(CFG_WITH_SPMC)
-struct mobj *mobj_spci_get_by_cookie(uint32_t cookie);
+struct mobj *mobj_spci_get_by_cookie(uint32_t cookie,
+				     unsigned int internal_offs,
+				     unsigned int page_count);
 
-uint32_t mobj_spci_register_by_cookie(uint32_t cookie);
 uint32_t mobj_spci_unregister_by_cookie(uint32_t cookie);
 
 /* Functions for SPMC */

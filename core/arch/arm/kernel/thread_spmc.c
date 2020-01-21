@@ -68,7 +68,7 @@ static void handle_yielding_call(struct thread_smc_args *args)
 	thread_check_canaries();
 
 	if (args->a4 == OPTEE_SPCI_YIELDING_CALL_RESUME) {
-		thread_resume_from_rpc(args->a5, args->a6, 0, 0, 0);
+		thread_resume_from_rpc(args->a5, args->a6, args->a7, 0, 0);
 		ret_val = SPCI_INVALID_PARAMETER;
 	} else {
 		thread_alloc_and_run(args->a1, args->a4, args->a5, args->a6);
@@ -297,7 +297,9 @@ void spmc_msg_recv(struct thread_smc_args *args)
 	}
 }
 
-static uint32_t yielding_call_with_arg(uint32_t cookie, uint32_t cookie_offset)
+static uint32_t yielding_call_with_arg(uint32_t cookie,
+				       uint32_t cookie_offset,
+				       unsigned int page_count)
 {
 	uint32_t rv = TEE_ERROR_BAD_PARAMETERS;
 	struct optee_msg_arg *arg = NULL;
@@ -305,7 +307,7 @@ static uint32_t yielding_call_with_arg(uint32_t cookie, uint32_t cookie_offset)
 	uint32_t num_params = 0;
 	size_t offs = 0;
 
-	mobj = mobj_spci_get_by_cookie(cookie);
+	mobj = mobj_spci_get_by_cookie(cookie, 0, page_count);
 	if (!mobj) {
 		EMSG("Can't find cookie %#"PRIx32, cookie);
 		return TEE_ERROR_BAD_PARAMETERS;
@@ -341,12 +343,9 @@ out_put_mobj:
 	return rv;
 }
 
-static uint32_t yielding_register_shm(uint32_t cookie)
+static uint32_t yielding_register_shm(uint32_t cookie __unused)
 {
-	if (mobj_spci_get_by_cookie(cookie))
-		return SPCI_INVALID_PARAMETER;
-
-	return 0;
+	return SPCI_NOT_SUPPORTED;
 }
 
 static uint32_t yielding_unregister_shm(uint32_t cookie)
@@ -377,7 +376,7 @@ uint32_t __weak __thread_std_smc_entry(uint32_t a0 __unused, uint32_t a1,
 {
 	switch (a1) {
 	case OPTEE_SPCI_YIELDING_CALL_WITH_ARG:
-		return yielding_call_with_arg(a2, a3);
+		return yielding_call_with_arg(a2, a3, 1);
 	case OPTEE_SPCI_YIELDING_CALL_REGISTER_SHM:
 		return yielding_register_shm(a2);
 	case OPTEE_SPCI_YIELDING_CALL_UNREGISTER_SHM:
@@ -387,18 +386,18 @@ uint32_t __weak __thread_std_smc_entry(uint32_t a0 __unused, uint32_t a1,
 	}
 }
 
-static bool set_rmem(struct optee_msg_param *param, struct thread_param *tpm)
+static bool set_smem(struct optee_msg_param *param, struct thread_param *tpm)
 {
 	param->attr = tpm->attr - THREAD_PARAM_ATTR_MEMREF_IN +
-		      OPTEE_MSG_ATTR_TYPE_RMEM_INPUT;
-	param->u.rmem.offs = tpm->u.memref.offs;
-	param->u.rmem.size = tpm->u.memref.size;
+		      OPTEE_MSG_ATTR_TYPE_SMEM_INPUT;
+	param->u.smem.offs = tpm->u.memref.offs;
+	param->u.smem.size = tpm->u.memref.size;
 	if (tpm->u.memref.mobj) {
-		param->u.rmem.shm_ref = mobj_get_cookie(tpm->u.memref.mobj);
-		if (!param->u.rmem.shm_ref)
+		param->u.smem.global_id = mobj_get_cookie(tpm->u.memref.mobj);
+		if (!param->u.smem.global_id)
 			return false;
 	} else {
-		param->u.rmem.shm_ref = 0;
+		param->u.smem.global_id = 0;
 	}
 
 	return true;
@@ -421,10 +420,12 @@ static void thread_rpc_free(unsigned int bt, uint32_t cookie, struct mobj *mobj)
 static struct mobj *thread_rpc_alloc(size_t size, unsigned int bt)
 {
 	struct mobj *mobj = NULL;
+	unsigned int page_count = ROUNDUP(size, SMALL_PAGE_SIZE) /
+				  SMALL_PAGE_SIZE;
 	struct thread_rpc_arg rpc_arg = { .call = {
 			.w1 = ns_spci_id,
 			.w4 = OPTEE_SPCI_YIELDING_CALL_RETURN_ALLOC_SHM,
-			.w6 = ROUNDUP(size, SMALL_PAGE_SIZE) / SMALL_PAGE_SIZE,
+			.w6 = page_count,
 			.w7 = bt,
 		},
 	};
@@ -433,10 +434,14 @@ static struct mobj *thread_rpc_alloc(size_t size, unsigned int bt)
 
 	if (!rpc_arg.ret.w6)
 		return NULL;
+	if (rpc_arg.ret.w7)
+		page_count++;
 
-	mobj = mobj_spci_get_by_cookie(rpc_arg.ret.w6);
+	mobj = mobj_spci_get_by_cookie(rpc_arg.ret.w6, rpc_arg.ret.w7,
+				       page_count);
 	if (!mobj) {
-		DMSG("mobj_spci_get_by_cookie(%#"PRIx32"): failed", rpc_arg.ret.w6);
+		DMSG("mobj_spci_get_by_cookie(%#"PRIx32", %#"PRIx32", %#x): failed",
+		     rpc_arg.ret.w6, rpc_arg.ret.w7, page_count);
 		return NULL;
 	}
 
@@ -474,12 +479,11 @@ static void thread_rpc_free_arg(struct mobj *mobj)
 static uint32_t get_rpc_arg(uint32_t cmd, size_t num_params,
 			    struct thread_param *params,
 			    struct optee_msg_arg **arg_ret,
-			    uint32_t *carg_ret, uint32_t *shm_offs_ret)
+			    uint32_t *carg_ret)
 {
 	size_t sz = OPTEE_MSG_GET_ARG_SIZE(THREAD_RPC_MAX_NUM_PARAMS);
 	struct thread_ctx *thr = threads + thread_get_id();
 	struct optee_msg_arg *arg = thr->rpc_arg;
-	size_t shm_offs = 0;
 
 	if (num_params > THREAD_RPC_MAX_NUM_PARAMS)
 		return TEE_ERROR_BAD_PARAMETERS;
@@ -524,7 +528,7 @@ static uint32_t get_rpc_arg(uint32_t cmd, size_t num_params,
 		case THREAD_PARAM_ATTR_MEMREF_IN:
 		case THREAD_PARAM_ATTR_MEMREF_OUT:
 		case THREAD_PARAM_ATTR_MEMREF_INOUT:
-			if (!set_rmem(arg->params + n, params + n))
+			if (!set_smem(arg->params + n, params + n))
 				return TEE_ERROR_BAD_PARAMETERS;
 			break;
 		default:
@@ -534,7 +538,6 @@ static uint32_t get_rpc_arg(uint32_t cmd, size_t num_params,
 
 	*arg_ret = arg;
 	*carg_ret = mobj_get_cookie(thr->rpc_mobj);
-	*shm_offs_ret = shm_offs;
 
 	return TEE_SUCCESS;
 }
@@ -552,7 +555,7 @@ static uint32_t get_rpc_arg_res(struct optee_msg_arg *arg, size_t num_params,
 			break;
 		case THREAD_PARAM_ATTR_MEMREF_OUT:
 		case THREAD_PARAM_ATTR_MEMREF_INOUT:
-			params[n].u.memref.size = arg->params[n].u.rmem.size;
+			params[n].u.memref.size = arg->params[n].u.smem.size;
 			break;
 		default:
 			break;
@@ -571,17 +574,15 @@ uint32_t thread_rpc_cmd(uint32_t cmd, size_t num_params,
 			.w4 = OPTEE_SPCI_YIELDING_CALL_RETURN_RPC_CMD,
 		},
 	};
-	uint32_t shm_offs = 0;
 	uint32_t carg = 0;
 	struct optee_msg_arg *arg = NULL;
 	uint32_t ret = 0;
 
-	ret = get_rpc_arg(cmd, num_params, params, &arg, &carg, &shm_offs);
+	ret = get_rpc_arg(cmd, num_params, params, &arg, &carg);
 	if (ret)
 		return ret;
 
 	rpc_arg.call.w6 = carg;
-	rpc_arg.call.w7 = shm_offs;
 	thread_rpc(&rpc_arg);
 
 	return get_rpc_arg_res(arg, num_params, params);
