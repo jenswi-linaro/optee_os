@@ -17,7 +17,8 @@
 
 FUNC thread_ffa_msg_wait , :
 	mov_imm	x0, FFA_MSG_WAIT		/* FID */
-	mov	x1, #FFA_TARGET_INFO_MBZ	/* Target info MBZ */
+	adr     x1, thread_spmc_target_info
+	ldr     w1, [x1]
 	mov	x2, #FFA_PARAM_MBZ		/* Param MBZ */
 	mov	x3, #FFA_PARAM_MBZ		/* Param MBZ */
 	mov	x4, #FFA_PARAM_MBZ		/* Param MBZ */

@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <ffa.h>
 #include <io.h>
+#include <initcall.h>
 #include <kernel/interrupt.h>
 #include <kernel/panic.h>
 #include <kernel/spinlock.h>
@@ -88,6 +89,18 @@ struct mem_frag_state {
 
 static uint16_t my_sp_id = 0x8001;
 
+
+/* Table 149: FFA_MEM_RELINQUISH. */
+struct ffa_relinquish_descriptor {
+       uint64_t handle;
+       uint32_t flags;
+       uint32_t endpoint_count;
+       uint16_t endpoint_id_array[];
+};
+
+/* Our VM ID is 0x8001, non-secure VM ID 0x0001 */
+const uint32_t thread_spmc_target_info = 0x80010001;
+
 /*
  * If @rxtx_size is 0 RX/TX buffers are not mapped or initialized.
  *
@@ -101,8 +114,16 @@ static uint16_t my_sp_id = 0x8001;
  * these buffers so we must always be careful when reading. while we hold
  * the lock.
  */
+
+#ifdef CFG_CORE_SEL2_SPMC
+static uint8_t rx_buf[SMALL_PAGE_SIZE] __aligned(SMALL_PAGE_SIZE);
+static uint8_t tx_buf[SMALL_PAGE_SIZE] __aligned(SMALL_PAGE_SIZE);
+#else
 static void *rx_buf;
 static void *tx_buf;
+#endif
+
+
 static unsigned int rxtx_size;
 static unsigned int rxtx_spinlock;
 static bool tx_buf_is_mine;
@@ -126,6 +147,28 @@ static void set_args(struct thread_smc_args *args, uint32_t fid,
 					  .a4 = w4,
 					  .a5 = w5, };
 }
+
+static int __maybe_unused
+set_pages(struct constituent_address_range *regions, unsigned int num_regions,
+	  unsigned int num_pages, struct mobj_ffa *mf)
+{
+	unsigned int n = 0;
+	unsigned int idx = 0;
+
+	for (n = 0; n < num_regions; n++) {
+		unsigned int page_count = READ_ONCE(regions[n].page_count);
+		uint64_t addr = READ_ONCE(regions[n].address);
+
+		if (mobj_ffa_add_pages_at(mf, &idx, addr, page_count))
+			return FFA_INVALID_PARAMETERS;
+	}
+
+	if (idx != num_pages)
+		return FFA_INVALID_PARAMETERS;
+
+	return 0;
+}
+
 
 static void handle_version(struct thread_smc_args *args)
 {
@@ -188,6 +231,7 @@ static void handle_features(struct thread_smc_args *args)
 		 FFA_PARAM_MBZ, FFA_PARAM_MBZ, FFA_PARAM_MBZ);
 }
 
+#ifdef CFG_CORE_SEL1_SPMC
 static int map_buf(paddr_t pa, unsigned int sz, void **va_ret)
 {
 	tee_mm_entry_t *mm = NULL;
@@ -293,6 +337,7 @@ out:
 	set_args(args, ret_fid, FFA_PARAM_MBZ, rc,
 		 FFA_PARAM_MBZ, FFA_PARAM_MBZ, FFA_PARAM_MBZ);
 }
+#endif
 
 static void handle_rx_release(struct thread_smc_args *args)
 {
@@ -408,6 +453,7 @@ static void handle_blocking_call(struct thread_smc_args *args)
 	}
 }
 
+#if CFG_CORE_SEL1_SPMC
 static int get_acc_perms(struct mem_accsess_descr *mem_acc,
 			 unsigned int num_mem_accs, uint8_t *acc_perms,
 			 unsigned int *region_offs)
@@ -531,7 +577,11 @@ static int add_mem_share_frag(struct mem_frag_state *s, void *buf, size_t flen)
 
 	SLIST_REMOVE(&frag_state_head, s, mem_frag_state, link);
 	if (rc < 0)
+#ifdef CFG_CORE_SEL2_SPMC
+		mobj_ffa_sel2_spmc_delete(s->share.mf);
+#else
 		mobj_ffa_sel1_spmc_delete(s->share.mf);
+#endif
 	else
 		mobj_ffa_push_to_inactive(s->share.mf);
 	free(s);
@@ -559,8 +609,8 @@ static int add_mem_share(tee_mm_entry_t *mm, void *buf, size_t blen,
 			 sizeof(struct constituent_address_range), &n) ||
 	    ADD_OVERFLOW(n, addr_range_offs, &n) || n > blen)
 		return FFA_INVALID_PARAMETERS;
-
 	share.mf = mobj_ffa_sel1_spmc_new(share.page_count);
+
 	if (!share.mf)
 		return FFA_NO_MEMORY;
 
@@ -601,6 +651,7 @@ static int add_mem_share(tee_mm_entry_t *mm, void *buf, size_t blen,
 	return 0;
 err:
 	mobj_ffa_sel1_spmc_delete(share.mf);
+
 	return rc;
 }
 
@@ -809,6 +860,7 @@ static void handle_mem_reclaim(struct thread_smc_args *args)
 out:
 	set_args(args, ret_fid, ret_val, 0, 0, 0, 0);
 }
+#endif
 
 /* Only called from assembly */
 void thread_spmc_msg_recv(struct thread_smc_args *args);
@@ -822,6 +874,7 @@ void thread_spmc_msg_recv(struct thread_smc_args *args)
 	case FFA_FEATURES:
 		handle_features(args);
 		break;
+#if CFG_CORE_SEL1_SPMC
 #ifdef ARM64
 	case FFA_RXTX_MAP_64:
 #endif
@@ -831,6 +884,7 @@ void thread_spmc_msg_recv(struct thread_smc_args *args)
 	case FFA_RXTX_UNMAP:
 		handle_rxtx_unmap(args);
 		break;
+#endif
 	case FFA_RX_RELEASE:
 		handle_rx_release(args);
 		break;
@@ -847,6 +901,7 @@ void thread_spmc_msg_recv(struct thread_smc_args *args)
 		else
 			handle_blocking_call(args);
 		break;
+#if CFG_CORE_SEL1_SPMC
 #ifdef ARM64
 	case FFA_MEM_SHARE_64:
 #endif
@@ -859,6 +914,7 @@ void thread_spmc_msg_recv(struct thread_smc_args *args)
 	case FFA_MEM_FRAG_TX:
 		handle_mem_frag_tx(args);
 		break;
+#endif
 	default:
 		EMSG("Unhandled FFA function ID %#"PRIx32, (uint32_t)args->a0);
 		set_args(args, FFA_ERROR, FFA_PARAM_MBZ, FFA_NOT_SUPPORTED,
@@ -1185,3 +1241,109 @@ void thread_rpc_free_global_payload(struct mobj *mobj __unused)
 
 	assert(!cant_happen);
 }
+
+#ifdef CFG_CORE_SEL2_SPMC
+static void spmc_rxtx_map(void)
+{
+	struct thread_smc_args args = {
+		.a0 = FFA_RXTX_MAP_64,
+		.a1 = (vaddr_t)tx_buf,
+		.a2 = (vaddr_t)rx_buf,
+		.a3 = 1,
+	};
+
+	thread_smccc(&args);
+	if (args.a0 == FFA_ERROR) {
+		EMSG("ERROR rxtx map failed with error %ld\n", args.a2);
+		panic();
+	}
+}
+
+static struct mem_transaction_descr *spmc_retrieve_req(uint64_t cookie)
+{
+	struct mem_transaction_descr *retrieve_region = (void *)tx_buf;
+
+	struct thread_smc_args args = {
+		.a0 = FFA_MEM_RETRIEVE_REQ_64,
+		.a1 =   sizeof(*retrieve_region),  	// Total Length
+		.a2 =	sizeof(*retrieve_region),	// Frag Length == Total length
+		.a3 =	0,				// Address, Using TX -> MBZ
+		.a4 =   0 				// Using TX -> MBZ
+	};
+
+	/* TODO pass all the information required by the spec */
+	memset(retrieve_region, 0, sizeof(*retrieve_region));
+	retrieve_region->global_handle = cookie;
+
+	thread_smccc(&args);
+	if (args.a0 == FFA_ERROR /*TODO != FFA_MEM_RETRIEVE_RESP_64 */) {
+		EMSG("Failed to fetch cookie %#"PRIx64, cookie);
+		return NULL;
+	}
+
+	return (void *)rx_buf;
+}
+
+void thread_spmc_relinquish(uint64_t cookie)
+{
+	struct ffa_relinquish_descriptor *relinquish_desc = (void *)tx_buf;
+
+	struct thread_smc_args args = {
+		.a0 = FFA_MEM_RELINQUISH,
+	};
+
+	memset(relinquish_desc, 0, sizeof(*relinquish_desc));
+	relinquish_desc->handle = cookie;
+	relinquish_desc->flags = 0;
+	/* TODO: Add endpoint details. */
+	thread_smccc(&args);
+	if (args.a0 != FFA_SUCCESS_32)
+		EMSG("Failed to relinquish cookie %#"PRIx64, cookie);
+}
+
+struct mobj_ffa *thread_spmc_populate_mobj_from_rx(uint64_t cookie)
+{
+	struct mem_transaction_descr *retrieve_desc;
+	struct mem_region_descr *descr;
+	struct mobj_ffa *mf;
+	uint32_t num_pages;
+
+
+	/* XXX Support single mem_region. */
+	retrieve_desc = spmc_retrieve_req(cookie);
+
+	if (!retrieve_desc) {
+	    EMSG("Failed to retrieve cookie from rx buffer %#"PRIx64, cookie);
+	    return NULL;
+	}
+
+	descr = (struct mem_region_descr *)
+			((uint8_t *)retrieve_desc +
+				retrieve_desc->mem_accsess_descr_array[0].mem_region_offs);
+
+	num_pages = descr->total_page_count;
+	mf = mobj_ffa_sel2_spmc_new(cookie, num_pages);
+
+	if (!mf)
+		return NULL;
+
+	if (set_pages(descr->address_range_array,
+				  descr->address_range_count,
+				  num_pages, mf)) {
+		mobj_ffa_sel2_spmc_delete(mf);
+		return NULL;
+
+	}
+
+	return mf;
+}
+
+static TEE_Result spmc_init(void)
+{
+	spmc_rxtx_map();
+
+	return TEE_SUCCESS;
+}
+service_init(spmc_init);
+
+#endif /*CFG_CORE_SEL2_SPMC*/
