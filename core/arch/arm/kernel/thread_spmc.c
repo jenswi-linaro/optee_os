@@ -433,7 +433,7 @@ static int mem_share_init(void *buf, size_t blen, unsigned int *page_count,
 {
 	struct mem_region_descr *region_descr = NULL;
 	struct mem_transaction_descr *descr = NULL;
-	const uint8_t exp_mem_acc_perm = 0x6; /* Not executable, Read-write */
+	const uint8_t exp_mem_acc_perm = 0x2; /* Read-write */
 	/* Normal memory, Write-Back cacheable, Inner shareable */
 	const uint8_t exp_mem_reg_attr = 0x2f;
 	unsigned int num_mem_accs = 0;

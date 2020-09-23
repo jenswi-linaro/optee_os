@@ -27,8 +27,8 @@
  * w3-w7: Implementation defined, free to be used below
  */
 
-#define OPTEE_FFA_VERSION_MAJOR	UINT32_C(0)
-#define OPTEE_FFA_VERSION_MINOR	UINT32_C(9)
+#define OPTEE_FFA_VERSION_MAJOR	UINT32_C(1)
+#define OPTEE_FFA_VERSION_MINOR	UINT32_C(0)
 
 #define OPTEE_FFA_BLOCKING_CALL(id)	UINT32_C(id)
 #define OPTEE_FFA_YIELDING_CALL_BIT	31
