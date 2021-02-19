@@ -578,7 +578,7 @@ shadow_stack_access_ok:
 	 */
 	ldr	r1, boot_mmu_config + CORE_MMU_CONFIG_LOAD_OFFSET
 	sub	r0, r0, r1
-	bl	ffa_secondary_cpu_boot_req
+	bl	ffa_secondary_cpu_ep_register
 	b	thread_ffa_msg_wait
 #else /* CFG_CORE_FFA */
 

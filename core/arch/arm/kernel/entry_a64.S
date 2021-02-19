@@ -257,7 +257,7 @@ clear_nex_bss:
 	 */
 	ldr	x1, boot_mmu_config + CORE_MMU_CONFIG_LOAD_OFFSET
 	sub	x0, x0, x1
-	bl	ffa_secondary_cpu_boot_req
+	bl	ffa_secondary_cpu_ep_register
 	b	thread_ffa_msg_wait
 #else
 	/*
