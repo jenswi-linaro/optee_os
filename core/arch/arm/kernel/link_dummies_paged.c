@@ -32,9 +32,3 @@ __thread_std_smc_entry(uint32_t a0 __unused, uint32_t a1 __unused,
 {
 	return 0;
 }
-void __section(".text.dummy.__wq_rpc")
-__wq_rpc(uint32_t func __unused, int id __unused,
-	 const void *sync_obj __unused, const char *fname __unused,
-	 int lineno  __unused)
-{
-}
