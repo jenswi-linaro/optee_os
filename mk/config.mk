@@ -673,3 +673,15 @@ ifeq (,$(CFG_HWRNG_QUALITY))
 $(error CFG_HWRNG_QUALITY not defined)
 endif
 endif
+
+# CFG_CORE_ASYNC_NOTIF is defined by the platform to enable enables support
+# for sending asynchronous notifications to normal world. Note that an
+# interrupt ID must be configurged by the platform too. Currently is only
+# CFG_CORE_ASYNC_NOTIF_GIC_INTID defined.
+CFG_CORE_ASYNC_NOTIF ?= n
+
+# CFG_CORE_ASYNC_NOTIF_GIC_INTID is defined by the platform to some free
+# interrupt. Setting it to a non-zero number enables support for using an
+# Arm-GIC to notify normal world. This config variable should use a value
+# larger the 32 to make it of the type SPI.
+CFG_CORE_ASYNC_NOTIF_GIC_INTID ?= 0
