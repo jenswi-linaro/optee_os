@@ -47,6 +47,8 @@ endif
 srcs-$(CFG_EMBEDDED_TS) += embedded_ts.c
 srcs-y += pseudo_ta.c
 
+srcs-y += transfer_list.c
+
 ifeq ($(CFG_SYSCALL_FTRACE),y)
 # We would not like to profile spin_lock_debug.c file as it provides
 # common APIs that are needed for ftrace framework to trace syscalls.
