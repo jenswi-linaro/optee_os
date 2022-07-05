@@ -312,20 +312,20 @@ clear_nex_bss:
 #endif
 
 #ifndef CFG_VIRTUALIZATION
-	mov	x21, sp
+	mov	x27, sp
 	adr_l	x0, threads
 	ldr	x0, [x0, #THREAD_CTX_STACK_VA_END]
 	mov	sp, x0
 	bl	thread_get_core_local
-	mov	x22, x0
-	str	wzr, [x22, #THREAD_CORE_LOCAL_FLAGS]
+	mov	x28, x0
+	str	wzr, [x28, #THREAD_CORE_LOCAL_FLAGS]
 #endif
 	mov	x0, x20		/* DT address */
 	bl	boot_init_primary_late
 #ifndef CFG_VIRTUALIZATION
 	mov	x0, #THREAD_CLF_TMP
-	str     w0, [x22, #THREAD_CORE_LOCAL_FLAGS]
-	mov	sp, x21
+	str     w0, [x28, #THREAD_CORE_LOCAL_FLAGS]
+	mov	sp, x27
 #endif
 
 	/*
