@@ -12,6 +12,7 @@
 #include <drivers/gic.h>
 #include <initcall.h>
 #include <inttypes.h>
+#include <io.h>
 #include <keep.h>
 #include <kernel/asan.h>
 #include <kernel/boot.h>
@@ -21,6 +22,7 @@
 #include <kernel/tee_misc.h>
 #include <kernel/thread.h>
 #include <kernel/tpm.h>
+#include <kernel/transfer_list.h>
 #include <libfdt.h>
 #include <malloc.h>
 #include <memtag.h>
@@ -76,10 +78,10 @@ DECLARE_KEEP_PAGER(sem_cpu_sync);
 
 #ifdef CFG_DT
 struct dt_descriptor {
-	void *blob;
-#ifdef _CFG_USE_DTB_OVERLAY
+	void *dtb;
+	void *dto;
 	int frag_id;
-#endif
+	struct transfer_list *tl;
 };
 
 static struct dt_descriptor external_dt __nex_bss;
@@ -628,125 +630,121 @@ void *get_embedded_dt(void)
 void *get_external_dt(void)
 {
 	assert(cpu_mmu_enabled());
-	return external_dt.blob;
+	return external_dt.dtb;
 }
 
 static TEE_Result release_external_dt(void)
 {
 	int ret = 0;
+	void *d = NULL;
 
-	if (!external_dt.blob)
-		return TEE_SUCCESS;
+	if (IS_ENABLED(CFG_FW_TRANSFER_LIST) && external_dt.tl) {
+		struct transfer_list *tl = external_dt.tl;
+		struct transfer_entry *te = NULL;
 
-	ret = fdt_pack(external_dt.blob);
-	if (ret < 0) {
-		EMSG("Failed to pack Device Tree at 0x%" PRIxPA ": error %d",
-		     virt_to_phys(external_dt.blob), ret);
-		panic();
+		d = external_dt.dto;
+		ret = fdt_pack(d);
+		if (ret < 0) {
+			EMSG("Failed to pack Device Tree overlay at %#"PRIxPA": error %d",
+			     virt_to_phys(d), ret);
+			panic();
+		}
+
+		te = transfer_list_find(tl, TL_TAG_FDT_OVERLAY);
+		assert(d == transfer_list_data(te));
+		transfer_list_set_data_size(tl, te, fdt_totalsize(d));
+		transfer_list_unmap_sync(tl);
+	} else {
+		 d = external_dt.dtb;
+		if (!d)
+			d = external_dt.dto;
+		if (!d)
+			goto out;
+
+		ret = fdt_pack(d);
+		if (ret < 0) {
+			EMSG("Failed to pack Device Tree at %#"PRIxPA": error %d",
+			     virt_to_phys(d), ret);
+			panic();
+		}
+
+		if (core_mmu_remove_mapping(MEM_AREA_EXT_DT, d,
+					    CFG_DTB_MAX_SIZE))
+			panic("Failed to remove temporary Device Tree mapping");
 	}
 
-	if (core_mmu_remove_mapping(MEM_AREA_EXT_DT, external_dt.blob,
-				    CFG_DTB_MAX_SIZE))
-		panic("Failed to remove temporary Device Tree mapping");
-
-	/* External DTB no more reached, reset pointer to invalid */
-	external_dt.blob = NULL;
+out:
+	memset(&external_dt, 0, sizeof(external_dt));
 
 	return TEE_SUCCESS;
 }
 boot_final(release_external_dt);
 
-#ifdef _CFG_USE_DTB_OVERLAY
-static int add_dt_overlay_fragment(struct dt_descriptor *dt, int ioffs)
+static int add_dt_overlay_fragment(struct dt_descriptor *dt,
+				   const char *target_path)
 {
-	char frag[32];
-	int offs;
-	int ret;
+	char frag[32] = { 0 };
+	int offs = 0;
+	int ret = 0;
+
+	offs = fdt_path_offset(dt->dtb, "/");
+	if (offs < 0)
+		return -1;
 
 	snprintf(frag, sizeof(frag), "fragment@%d", dt->frag_id);
-	offs = fdt_add_subnode(dt->blob, ioffs, frag);
+	offs = fdt_add_subnode(dt->dto, offs, frag);
 	if (offs < 0)
 		return offs;
 
 	dt->frag_id += 1;
 
-	ret = fdt_setprop_string(dt->blob, offs, "target-path", "/");
+	ret = fdt_setprop_string(dt->dto, offs, "target-path", target_path);
 	if (ret < 0)
 		return -1;
 
-	return fdt_add_subnode(dt->blob, offs, "__overlay__");
-}
-
-static int init_dt_overlay(struct dt_descriptor *dt, int __maybe_unused dt_size)
-{
-	int fragment;
-
-	if (IS_ENABLED(CFG_EXTERNAL_DTB_OVERLAY)) {
-		if (!fdt_check_header(dt->blob)) {
-			fdt_for_each_subnode(fragment, dt->blob, 0)
-				dt->frag_id += 1;
-			return 0;
-		}
-	}
-
-	return fdt_create_empty_tree(dt->blob, dt_size);
-}
-#else
-static int add_dt_overlay_fragment(struct dt_descriptor *dt __unused, int offs)
-{
-	return offs;
-}
-
-static int init_dt_overlay(struct dt_descriptor *dt __unused,
-			   int dt_size __unused)
-{
-	return 0;
-}
-#endif /* _CFG_USE_DTB_OVERLAY */
-
-static int add_dt_path_subnode(struct dt_descriptor *dt, const char *path,
-			       const char *subnode)
-{
-	int offs;
-
-	offs = fdt_path_offset(dt->blob, path);
-	if (offs < 0)
-		return -1;
-	offs = add_dt_overlay_fragment(dt, offs);
-	if (offs < 0)
-		return -1;
-	offs = fdt_add_subnode(dt->blob, offs, subnode);
-	if (offs < 0)
-		return -1;
-	return offs;
+	return fdt_add_subnode(dt->dto, offs, "__overlay__");
 }
 
 static int add_optee_dt_node(struct dt_descriptor *dt)
 {
-	int offs;
-	int ret;
+	void *blob = NULL;
+	int offs = 0;
+	int ret = 0;
 
-	if (fdt_path_offset(dt->blob, "/firmware/optee") >= 0) {
+	if (dt->dtb && fdt_path_offset(dt->dtb, "/firmware/optee") >= 0) {
 		DMSG("OP-TEE Device Tree node already exists!");
 		return 0;
 	}
 
-	offs = fdt_path_offset(dt->blob, "/firmware");
-	if (offs < 0) {
-		offs = add_dt_path_subnode(dt, "/", "firmware");
+	if (dt->dto) {
+		blob = dt->dto;
+		offs = add_dt_overlay_fragment(dt, "/");
 		if (offs < 0)
 			return -1;
-	}
+		offs = fdt_add_subnode(blob, offs, "firmware");
+		if (offs < 0)
+			return -1;
+	} else {
+		blob = dt->dtb;
+		offs = fdt_path_offset(blob, "/firmware");
+		if (offs < 0) {
+			offs = fdt_path_offset(blob, "/");
+			if (offs < 0)
+				return -1;
 
-	offs = fdt_add_subnode(dt->blob, offs, "optee");
+			offs = fdt_add_subnode(blob, offs, "firmware");
+			if (offs < 0)
+				return -1;
+		}
+	}
+	offs = fdt_add_subnode(blob, offs, "optee");
 	if (offs < 0)
 		return -1;
 
-	ret = fdt_setprop_string(dt->blob, offs, "compatible",
-				 "linaro,optee-tz");
+	ret = fdt_setprop_string(blob, offs, "compatible", "linaro,optee-tz");
 	if (ret < 0)
 		return -1;
-	ret = fdt_setprop_string(dt->blob, offs, "method", "smc");
+	ret = fdt_setprop_string(blob, offs, "method", "smc");
 	if (ret < 0)
 		return -1;
 	if (CFG_CORE_ASYNC_NOTIF_GIC_INTID) {
@@ -774,8 +772,7 @@ static int add_optee_dt_node(struct dt_descriptor *dt)
 			TEE_U32_TO_BIG_ENDIAN(irq_type_edge),
 		};
 
-		ret = fdt_setprop(dt->blob, offs, "interrupts", val,
-				  sizeof(val));
+		ret = fdt_setprop(blob, offs, "interrupts", val, sizeof(val));
 		if (ret < 0)
 			return -1;
 	}
@@ -790,46 +787,58 @@ static int append_psci_compatible(void *fdt, int offs, const char *str)
 
 static int dt_add_psci_node(struct dt_descriptor *dt)
 {
-	int offs;
+	void *blob = NULL;
+	int offs = 0;
 
-	if (fdt_path_offset(dt->blob, "/psci") >= 0) {
+	if (dt->dtb && fdt_path_offset(dt->dtb, "/psci") >= 0) {
 		DMSG("PSCI Device Tree node already exists!");
 		return 0;
 	}
 
-	offs = add_dt_path_subnode(dt, "/", "psci");
+	if (dt->dto) {
+		blob = dt->dto;
+		offs = add_dt_overlay_fragment(dt, "/");
+		if (offs < 0)
+			return -1;
+	} else {
+		blob = dt->dtb;
+		offs = fdt_path_offset(blob, "/");
+		if (offs < 0)
+			return -1;
+	}
+	offs = fdt_add_subnode(blob, offs, "psci");
 	if (offs < 0)
 		return -1;
-	if (append_psci_compatible(dt->blob, offs, "arm,psci-1.0"))
+
+	if (append_psci_compatible(blob, offs, "arm,psci-1.0"))
 		return -1;
-	if (append_psci_compatible(dt->blob, offs, "arm,psci-0.2"))
+	if (append_psci_compatible(blob, offs, "arm,psci-0.2"))
 		return -1;
-	if (append_psci_compatible(dt->blob, offs, "arm,psci"))
+	if (append_psci_compatible(blob, offs, "arm,psci"))
 		return -1;
-	if (fdt_setprop_string(dt->blob, offs, "method", "smc"))
+	if (fdt_setprop_string(blob, offs, "method", "smc"))
 		return -1;
-	if (fdt_setprop_u32(dt->blob, offs, "cpu_suspend", PSCI_CPU_SUSPEND))
+	if (fdt_setprop_u32(blob, offs, "cpu_suspend", PSCI_CPU_SUSPEND))
 		return -1;
-	if (fdt_setprop_u32(dt->blob, offs, "cpu_off", PSCI_CPU_OFF))
+	if (fdt_setprop_u32(blob, offs, "cpu_off", PSCI_CPU_OFF))
 		return -1;
-	if (fdt_setprop_u32(dt->blob, offs, "cpu_on", PSCI_CPU_ON))
+	if (fdt_setprop_u32(blob, offs, "cpu_on", PSCI_CPU_ON))
 		return -1;
-	if (fdt_setprop_u32(dt->blob, offs, "sys_poweroff", PSCI_SYSTEM_OFF))
+	if (fdt_setprop_u32(blob, offs, "sys_poweroff", PSCI_SYSTEM_OFF))
 		return -1;
-	if (fdt_setprop_u32(dt->blob, offs, "sys_reset", PSCI_SYSTEM_RESET))
+	if (fdt_setprop_u32(blob, offs, "sys_reset", PSCI_SYSTEM_RESET))
 		return -1;
 	return 0;
 }
 
-static int check_node_compat_prefix(struct dt_descriptor *dt, int offs,
-				    const char *prefix)
+static int check_node_compat_prefix(void *blob, int offs, const char *prefix)
 {
 	const size_t prefix_len = strlen(prefix);
 	size_t l;
 	int plen;
 	const char *prop;
 
-	prop = fdt_getprop(dt->blob, offs, "compatible", &plen);
+	prop = fdt_getprop(blob, offs, "compatible", &plen);
 	if (!prop)
 		return -1;
 
@@ -850,14 +859,14 @@ static int dt_add_psci_cpu_enable_methods(struct dt_descriptor *dt)
 	int offs = 0;
 
 	while (1) {
-		offs = fdt_next_node(dt->blob, offs, NULL);
+		offs = fdt_next_node(dt->dtb, offs, NULL);
 		if (offs < 0)
 			break;
-		if (fdt_getprop(dt->blob, offs, "enable-method", NULL))
+		if (fdt_getprop(dt->dtb, offs, "enable-method", NULL))
 			continue; /* already set */
-		if (check_node_compat_prefix(dt, offs, "arm,cortex-a"))
+		if (check_node_compat_prefix(dt->dtb, offs, "arm,cortex-a"))
 			continue; /* no compatible */
-		if (fdt_setprop_string(dt->blob, offs, "enable-method", "psci"))
+		if (fdt_setprop_string(dt->dtb, offs, "enable-method", "psci"))
 			return -1;
 		/* Need to restart scanning as offsets may have changed */
 		offs = 0;
@@ -865,11 +874,72 @@ static int dt_add_psci_cpu_enable_methods(struct dt_descriptor *dt)
 	return 0;
 }
 
+static bool have_prop_val_str(const void *fdt, int offs, const char *name,
+			      const void *val)
+{
+	const char *prop;
+	int len;
+
+	prop = fdt_getprop(fdt, offs, name, &len);
+	if (!prop)
+		return false;
+	if (len != strlen(val) + 1)
+		return false;
+	if (!strcmp(prop, val))
+		return false;
+	return true;
+}
+
+static int dto_add_psci_cpu_enable_methods(struct dt_descriptor *dt)
+{
+	const char *name;
+	int parent = -1;
+	int offs = 0;
+	int doffs = 0;
+	int ret = 0;
+
+	offs = fdt_path_offset(dt->dtb, "/cpus");
+	if (offs < 0)
+		return offs;
+
+	fdt_for_each_subnode(offs, dt->dtb, offs) {
+		if (!have_prop_val_str(dt->dtb, offs, "device_type", "cpu"))
+			continue;
+		/* Ignore any nodes which already use "psci". */
+		if (have_prop_val_str(dt->dtb, offs, "enable-method", "psci"))
+			continue;
+
+		name = fdt_get_name(dt->dtb, offs, &ret);
+		if (!name)
+			return ret;
+		if (parent < 0) {
+			parent = add_overlay_subnode(dt->dto, parent, frag_id,
+						     "cpus");
+			if (parent < 0)
+				return parent;
+		}
+		doffs = fdt_add_subnode(dt->dto, parent, name);
+		if (doffs < 0)
+			return doffs;
+
+		ret = fdt_setprop_string(dt->dto, doffs, "enable-method",
+					 "psci");
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+
 static int config_psci(struct dt_descriptor *dt)
 {
 	if (dt_add_psci_node(dt))
 		return -1;
-	return dt_add_psci_cpu_enable_methods(dt);
+	if (dt->dto)
+		return dto_add_psci_cpu_enable_methods(dt);
+	else
+		return dt_add_psci_cpu_enable_methods(dt);
 }
 #else
 static int config_psci(struct dt_descriptor *dt __unused)
@@ -900,38 +970,43 @@ static int add_res_mem_dt_node(struct dt_descriptor *dt, const char *name,
 	int len_size = -1;
 	bool found = true;
 	char subnode_name[80] = { 0 };
+	void *blob = NULL;
 
-	offs = fdt_path_offset(dt->blob, "/reserved-memory");
-
-	if (offs < 0) {
-		found = false;
-		offs = 0;
-	}
-
-	if (IS_ENABLED(_CFG_USE_DTB_OVERLAY)) {
+	if (dt->dto) {
+		blob = dt->dto;
 		len_size = sizeof(paddr_t) / sizeof(uint32_t);
 		addr_size = sizeof(paddr_t) / sizeof(uint32_t);
+		offs = add_dt_overlay_fragment(dt, "/");
+		found = false;
 	} else {
-		len_size = fdt_size_cells(dt->blob, offs);
+		blob = dt->dtb;
+		offs = fdt_path_offset(blob, "/reserved-memory");
+
+		if (offs < 0) {
+			found = false;
+			offs = 0;
+		}
+
+		len_size = fdt_size_cells(blob, offs);
 		if (len_size < 0)
 			return -1;
-		addr_size = fdt_address_cells(dt->blob, offs);
+		addr_size = fdt_address_cells(blob, offs);
 		if (addr_size < 0)
 			return -1;
 	}
 
 	if (!found) {
-		offs = add_dt_path_subnode(dt, "/", "reserved-memory");
+		offs = fdt_add_subnode(blob, offs, "reserved-memory");
 		if (offs < 0)
 			return -1;
-		ret = fdt_setprop_cell(dt->blob, offs, "#address-cells",
+		ret = fdt_setprop_cell(blob, offs, "#address-cells",
 				       addr_size);
 		if (ret < 0)
 			return -1;
-		ret = fdt_setprop_cell(dt->blob, offs, "#size-cells", len_size);
+		ret = fdt_setprop_cell(blob, offs, "#size-cells", len_size);
 		if (ret < 0)
 			return -1;
-		ret = fdt_setprop(dt->blob, offs, "ranges", NULL, 0);
+		ret = fdt_setprop(blob, offs, "ranges", NULL, 0);
 		if (ret < 0)
 			return -1;
 	}
@@ -940,17 +1015,17 @@ static int add_res_mem_dt_node(struct dt_descriptor *dt, const char *name,
 		       "%s@%" PRIxPA, name, pa);
 	if (ret < 0 || ret >= (int)sizeof(subnode_name))
 		DMSG("truncated node \"%s@%" PRIxPA"\"", name, pa);
-	offs = fdt_add_subnode(dt->blob, offs, subnode_name);
+	offs = fdt_add_subnode(blob, offs, subnode_name);
 	if (offs >= 0) {
 		uint32_t data[FDT_MAX_NCELLS * 2];
 
 		set_dt_val(data, addr_size, pa);
 		set_dt_val(data + addr_size, len_size, size);
-		ret = fdt_setprop(dt->blob, offs, "reg", data,
+		ret = fdt_setprop(blob, offs, "reg", data,
 				  sizeof(uint32_t) * (addr_size + len_size));
 		if (ret < 0)
 			return -1;
-		ret = fdt_setprop(dt->blob, offs, "no-map", NULL, 0);
+		ret = fdt_setprop(blob, offs, "no-map", NULL, 0);
 		if (ret < 0)
 			return -1;
 	} else {
@@ -1086,11 +1161,83 @@ static int mark_static_shm_as_reserved(struct dt_descriptor *dt)
 }
 #endif /*CFG_CORE_RESERVED_SHM*/
 
+static void init_tl_dtb(struct dt_descriptor *dt)
+{
+	struct transfer_entry *te = NULL;
+
+	te = transfer_list_find(dt->tl, TL_TAG_FDT);
+	if (!te)
+		panic("DTB missing in Transfer list");
+	dt->dtb = transfer_list_data(te);
+}
+
+static void init_tl_dto(struct dt_descriptor *dt)
+{
+	struct transfer_entry *te = NULL;
+	bool did_create = false;
+	int fragment = 0;
+	int ret = 0;
+
+	te = transfer_list_find(dt->tl, TL_TAG_FDT_OVERLAY);
+	if (!te) {
+		te = transfer_list_add(dt->tl, TL_TAG_FDT_OVERLAY, 0);
+		did_create = true;
+	}
+	if (!te)
+		panic("Failed to add Device Tree Overlay in Transfer List");
+
+	transfer_list_grow_to_max_data_size(dt->tl, te);
+	dt->dto = transfer_list_data(te);
+
+	if (did_create) {
+		ret = fdt_create_empty_tree(dt->dto, te->data_size);
+		if (ret) {
+			EMSG("Device Tree Overlay init fail @ %p: error %d",
+			     dt->dto, ret);
+			panic();
+		}
+	} else {
+		ret = fdt_open_into(dt->dto, dt->dto, te->data_size);
+		if (ret) {
+			EMSG("Invalid Device Tree Overlay @ %p: error %d",
+			     dt->dto, ret);
+			panic();
+		}
+		fdt_for_each_subnode(fragment, dt->dto, 0)
+			dt->frag_id += 1;
+	}
+}
+
+static int init_dt_overlay(struct dt_descriptor *dt, int __maybe_unused dt_size)
+{
+	if (IS_ENABLED(CFG_EXTERNAL_DTB_OVERLAY)) {
+		if (!fdt_open_into(dt->dto, dt->dto, CFG_DTB_MAX_SIZE)) {
+			int fragment = 0;
+
+			fdt_for_each_subnode(fragment, dt->dto, 0)
+				dt->frag_id += 1;
+			return 0;
+		}
+	}
+
+	return fdt_create_empty_tree(dt->dto, dt_size);
+}
+
 static void init_external_dt(unsigned long phys_dt)
 {
 	struct dt_descriptor *dt = &external_dt;
-	void *fdt;
-	int ret;
+	bool have_tl = IS_ENABLED(CFG_FW_TRANSFER_LIST) && dt->tl;
+	int ret = 0;
+
+	/*
+	 * If we have a transfer list, then we should always put the
+	 * overlay there. The phys_dt address can only be used for a normal
+	 * DTB in that case.
+	 */
+	if (have_tl) {
+		init_tl_dto(dt);
+		init_tl_dtb(dt);
+	}
 
 	if (!phys_dt) {
 		/*
@@ -1105,23 +1252,39 @@ static void init_external_dt(unsigned long phys_dt)
 		return;
 	}
 
-	fdt = core_mmu_add_mapping(MEM_AREA_EXT_DT, phys_dt, CFG_DTB_MAX_SIZE);
-	if (!fdt)
-		panic("Failed to map external DTB");
+	if (IS_ENABLED(CFG_EXTERNAL_DTB_OVERLAY) ||
+	    IS_ENABLED(CFG_GENERATE_DTB_OVERLAY)) {
+		/* We already have an overlay from the transfer list */
+		if (dt->dto)
+			return;
 
-	dt->blob = fdt;
+		dt->dto = core_mmu_add_mapping(MEM_AREA_EXT_DT, phys_dt,
+					       CFG_DTB_MAX_SIZE);
+		if (!dt->dto)
+			panic("Failed to map external Overlay DTB");
 
-	ret = init_dt_overlay(dt, CFG_DTB_MAX_SIZE);
-	if (ret < 0) {
-		EMSG("Device Tree Overlay init fail @ %#lx: error %d", phys_dt,
-		     ret);
-		panic();
-	}
+		ret = init_dt_overlay(dt, CFG_DTB_MAX_SIZE);
+		if (ret < 0) {
+			EMSG("Device Tree Overlay init fail @ %#lx: error %d",
+			     phys_dt, ret);
+			panic();
+		}
+	} else {
+		dt->dtb = core_mmu_add_mapping(MEM_AREA_EXT_DT, phys_dt,
+					   CFG_DTB_MAX_SIZE);
+		if (!dt->dtb)
+			panic("Failed to map external DTB");
 
-	ret = fdt_open_into(fdt, fdt, CFG_DTB_MAX_SIZE);
-	if (ret < 0) {
-		EMSG("Invalid Device Tree at %#lx: error %d", phys_dt, ret);
-		panic();
+		/*
+		 * Since we don't have an overlay we're supposed to
+		 * modify this DTB directly instead.
+		 */
+		ret = fdt_open_into(dt->dtb, dt->dtb, CFG_DTB_MAX_SIZE);
+		if (ret < 0) {
+			EMSG("Invalid Device Tree at %#lx: error %d",
+			     phys_dt, ret);
+			panic();
+		}
 	}
 
 	IMSG("Non-secure external DT found");
@@ -1137,7 +1300,7 @@ static void update_external_dt(void)
 {
 	struct dt_descriptor *dt = &external_dt;
 
-	if (!dt->blob)
+	if (!dt->dtb && !dt->dto)
 		return;
 
 	if (!IS_ENABLED(CFG_CORE_FFA) && add_optee_dt_node(dt))
@@ -1358,13 +1521,28 @@ static void init_secondary_helper(unsigned long nsec_entry)
  * the unpaged area so that it lies in the init area.
  */
 void __weak boot_init_primary_early(unsigned long pageable_part,
-				    unsigned long nsec_entry __maybe_unused)
+				    unsigned long nsec_entry __maybe_unused,
+				    unsigned long transfer_list)
 {
 	unsigned long e = PADDR_INVALID;
 
 #if !defined(CFG_WITH_ARM_TRUSTED_FW)
 	e = nsec_entry;
 #endif
+	if (IS_ENABLED(CFG_FW_TRANSFER_LIST) && transfer_list) {
+		struct transfer_entry *te = NULL;
+		struct transfer_list *tl = NULL;
+
+		tl = transfer_list_map(transfer_list);
+		if (!tl)
+			panic("Failed to map transfer list");
+		external_dt.tl = tl;
+		te = transfer_list_find(tl, TL_TAG_OPTEE_PAGABLE_PART);
+		if (IS_ENABLED(CFG_WITH_PAGER) && !pageable_part && te)
+			pageable_part = get_le64(transfer_list_data(te));
+		if (te)
+			transfer_list_rem(tl, te);
+	}
 
 	init_primary(pageable_part, e);
 }
@@ -1426,15 +1604,24 @@ struct ns_entry_context *boot_core_hpen(void)
 
 #if defined(CFG_CORE_ASLR)
 #if defined(CFG_DT)
-unsigned long __weak get_aslr_seed(void *fdt)
+unsigned long __weak get_aslr_seed(void *fdt, struct transfer_list *tl)
 {
-	int rc = fdt_check_header(fdt);
+	int rc = 0;
 	const uint64_t *seed_ptr = NULL;
 	const uint64_t zeroes = 0;
 	uint64_t seed = 0;
 	int offs = 0;
 	int len = 0;
 
+	if (!fdt && IS_ENABLED(CFG_FW_TRANSFER_LIST)) {
+		struct transfer_entry *te = transfer_list_find(tl, TL_TAG_FDT);
+
+		if (te)
+			fdt = (uint8_t *)te + te->hdr_size;
+	}
+	if (!fdt)
+		goto err;
+	rc = fdt_check_header(fdt);
 	if (rc) {
 		DMSG("Bad fdt: %d", rc);
 		goto err;
@@ -1462,7 +1649,8 @@ err:
 	return plat_get_aslr_seed();
 }
 #else /*!CFG_DT*/
-unsigned long __weak get_aslr_seed(void *fdt __unused)
+unsigned long __weak get_aslr_seed(void *fdt __unused,
+				   struct transfer_list *tl __unused)
 {
 	/* Try platform implementation */
 	return plat_get_aslr_seed();

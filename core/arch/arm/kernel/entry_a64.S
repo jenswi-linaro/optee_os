@@ -12,6 +12,7 @@
 #include <generated/asm-defines.h>
 #include <keep.h>
 #include <kernel/thread_private.h>
+#include <kernel/transfer_list.h>
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
@@ -125,22 +126,64 @@
 	.endm
 
 FUNC _start , :
+/*
+ * Boot arguments are saved as:
+ * x19: pagable part address or 0
+ * x20: DT address or 0
+ * x21: Transfer list address or 0
+ */
 #if defined(CFG_CORE_SEL1_SPMC)
 	/*
 	 * With OP-TEE as SPMC at S-EL1 the SPMD (SPD_spmd) in TF-A passes
-	 * the DTB in x0, pagaeble part in x1 and the rest of the registers
-	 * are unused
+	 * boot arguments as:
+	 * x0:	DT address or 0
+	 * x1:	Pagable part address, 0, or TRANSFER_LIST_SIGNATURE
+	 * x2:	0
+	 * x3:	Transfer list address or 0
 	 */
-	mov	x19, x1		/* Save pagable part */
-	mov	x20, x0		/* Save DT address */
+#if defined(CFG_FW_TRANSFER_LIST)
+	mov_imm	x21, TRANSFER_LIST_SIGNATURE
+	cmp	x1, x21
+	b.eq	1f
+	/* TRANSFER_LIST_SIGNATURE not provided, legacy mode */
+	mov	x19, x1
+	mov	x21, #0
+	b	2f
+1:	/* TRANSFER_LIST_SIGNATURE provided */
+	mov	x19, #0	/* Eventual pagable address provided in transfer list */
+2:	mov	x20, x0
+	mov	x21, x3
 #else
-	mov	x19, x0		/* Save pagable part address */
+	mov	x19, x1
+	mov	x20, x0
+	mov	x21, #0
+#endif
+
+#else /*!CFG_CORE_SEL1_SPMC*/
+	/*
+	 * When using the legacy SMC ABI OPTEED in TF-A passes
+	 * boot arguments as:
+	 * x0: Pagable part address or 0
+	 * x1: TRANSFER_LIST_SIGNATURE or 0
+	 * x2: DT address or 0
+	 * x3: Transfer list address or 0
+	 */
+	mov	x19, x0
 #if defined(CFG_DT_ADDR)
 	ldr     x20, =CFG_DT_ADDR
 #else
-	mov	x20, x2		/* Save DT address */
+	mov	x20, x2
 #endif
-#endif
+	mov_imm	x21, TRANSFER_LIST_SIGNATURE
+	cmp	x1, x21
+	b.eq	1f
+	/* TRANSFER_LIST_SIGNATURE not provided, legacy mode */
+	mov	x21, #0
+	b	2f
+1:	/* TRANSFER_LIST_SIGNATURE provided */
+	mov	x21, x3
+2:
+#endif /*CFG_CORE_SEL1_SPMC*/
 
 	adr	x0, reset_vect_table
 	msr	vbar_el1, x0
@@ -256,8 +299,15 @@ clear_nex_bss:
 	bl	boot_init_memtag
 #endif
 
+#ifdef CFG_FW_TRANSFER_LIST
+	mov	x0, x21
+	bl	transfer_list_check_header
+	mov	x21, x0
+#endif
+
 #ifdef CFG_CORE_ASLR
 	mov	x0, x20
+	mov	x1, x21
 	bl	get_aslr_seed
 #else
 	mov	x0, #0
@@ -305,6 +355,7 @@ clear_nex_bss:
 
 	mov	x0, x19		/* pagable part address */
 	mov	x1, #-1
+	mov	x2, x21		/* Transfer list address */
 	bl	boot_init_primary_early
 
 #ifdef CFG_MEMTAG
@@ -321,6 +372,7 @@ clear_nex_bss:
 	str	wzr, [x28, #THREAD_CORE_LOCAL_FLAGS]
 #endif
 	mov	x0, x20		/* DT address */
+	mov	x1, x21		/* Transfer list address */
 	bl	boot_init_primary_late
 #ifndef CFG_VIRTUALIZATION
 	mov	x0, #THREAD_CLF_TMP

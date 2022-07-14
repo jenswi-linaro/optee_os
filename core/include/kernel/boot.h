@@ -7,6 +7,7 @@
 #define __KERNEL_BOOT_H
 
 #include <initcall.h>
+#include <kernel/transfer_list.h>
 #include <types_ext.h>
 
 /*
@@ -45,7 +46,8 @@ extern const struct core_mmu_config boot_mmu_config;
 
 /* @nsec_entry is unused if using CFG_WITH_ARM_TRUSTED_FW */
 void boot_init_primary_early(unsigned long pageable_part,
-			     unsigned long nsec_entry);
+			     unsigned long nsec_entry,
+			     unsigned long transfer_list);
 void boot_init_primary_late(unsigned long fdt);
 void boot_init_memtag(void);
 
@@ -92,10 +94,11 @@ void *get_external_dt(void);
 /*
  * get_aslr_seed() - return a random seed for core ASLR
  * @fdt:	Pointer to a device tree if CFG_DT_ADDR=y
+ * @tl:		Pointer to a transfer list if CFG_FW_TRANSFER_LIST=y
  *
  * This function has a __weak default implementation.
  */
-unsigned long get_aslr_seed(void *fdt);
+unsigned long get_aslr_seed(void *fdt, struct transfer_list *tl);
 
 /* Returns true if passed DTB is same as Embedded DTB, otherwise false */
 static inline bool is_embedded_dt(void *fdt)

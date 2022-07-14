@@ -442,6 +442,15 @@ ifeq ($(CFG_MAP_EXT_DT_SECURE),y)
 $(call force,CFG_DT,y)
 endif
 
+# Enable Firmware Handoff Protocol using a Transfer list
+# The presence of the transfer list is probed at boot so it's relatively
+# safe to enable this even the boot loader might not supply a transfer
+# list.
+CFG_FW_TRANSFER_LIST ?= n
+ifeq ($(CFG_FW_TRANSFER_LIST),y)
+$(call force,CFG_DT,y)
+endif
+
 # Maximum size of the Device Tree Blob, has to be large enough to allow
 # editing of the supplied DTB.
 CFG_DTB_MAX_SIZE ?= 0x10000
@@ -464,8 +473,6 @@ CFG_GENERATE_DTB_OVERLAY ?= n
 ifeq (y-y,$(CFG_EXTERNAL_DTB_OVERLAY)-$(CFG_GENERATE_DTB_OVERLAY))
 $(error CFG_EXTERNAL_DTB_OVERLAY and CFG_GENERATE_DTB_OVERLAY are exclusive)
 endif
-_CFG_USE_DTB_OVERLAY := $(call cfg-one-enabled,CFG_EXTERNAL_DTB_OVERLAY \
-			  CFG_GENERATE_DTB_OVERLAY)
 
 # All embedded tests are supposed to be disabled by default, this flag
 # is used to control the default value of all other embedded tests
