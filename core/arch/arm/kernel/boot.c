@@ -1429,7 +1429,9 @@ struct ns_entry_context *boot_core_hpen(void)
 unsigned long __weak get_aslr_seed(void *fdt)
 {
 	int rc = fdt_check_header(fdt);
-	const uint64_t *seed = NULL;
+	const uint64_t *seed_ptr = NULL;
+	const uint64_t zeroes = 0;
+	uint64_t seed = 0;
 	int offs = 0;
 	int len = 0;
 
@@ -1443,14 +1445,18 @@ unsigned long __weak get_aslr_seed(void *fdt)
 		DMSG("Cannot find /secure-chosen");
 		goto err;
 	}
-	seed = fdt_getprop(fdt, offs, "kaslr-seed", &len);
-	if (!seed || len != sizeof(*seed)) {
+	seed_ptr = fdt_getprop(fdt, offs, "kaslr-seed", &len);
+	if (!seed_ptr || len != sizeof(*seed_ptr)) {
 		DMSG("Cannot find valid kaslr-seed");
 		goto err;
 	}
+	seed = fdt64_to_cpu(*seed_ptr);
+	rc = fdt_setprop_inplace(fdt, offs, "kaslr-seed", &zeroes,
+				 sizeof(zeroes));
+	if (rc)
+		DMSG("Can't clear kaslr-seed: %d", rc);
 
-	return fdt64_to_cpu(*seed);
-
+	return seed;
 err:
 	/* Try platform implementation */
 	return plat_get_aslr_seed();
