@@ -42,7 +42,7 @@
 #include <string.h>
 #include <errno.h>
 
-#ifdef TPM_POSIX
+#if defined(TPM_POSIX) || defined(TPM_SKIBOOT)
 #include <netinet/in.h>
 #endif
 #ifdef TPM_WINDOWS
