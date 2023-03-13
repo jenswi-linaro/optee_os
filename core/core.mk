@@ -162,6 +162,18 @@ libdir = core/lib/scmi-server
 include mk/lib.mk
 endif
 
+# TODO set this in core/lib/ibmtss/include/ibmtss/Implementation.h
+cppflags$(sm) += -DTPM_TPM20
+cppflags$(sm) += -DTPM_TSS_NOFILE
+cppflags$(sm) += -DTPM_TSS_NO_OPENSSL
+cppflags$(sm) += -DTPM_SKIBOOT
+cppflags$(sm) += -DTPM_NOSOCKET
+cppflags$(sm) += -DTPM_TSS_NOENV
+cppflags$(sm) += -DTPM_DEVICE_DEFAULT=NULL
+libname = ibmtss
+libdir = core/lib/ibmtss
+include mk/lib.mk
+
 #
 # Do main source
 #
