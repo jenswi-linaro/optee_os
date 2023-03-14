@@ -552,7 +552,6 @@ static TPM_RC TSS_SetEncryptSessions(TSS_CONTEXT *tssContext, const char *value)
 static TPM_RC TSS_SetLocality(TSS_CONTEXT *tssContext, const char *value)
 {
     TPM_RC		rc = 0;
-    int			irc = 0;
 
     if (rc == 0) {
 	if (value == NULL) {
@@ -560,6 +559,8 @@ static TPM_RC TSS_SetLocality(TSS_CONTEXT *tssContext, const char *value)
 	}
     }
     if (rc == 0) {
+#ifndef TPM_SKIBOOT
+	int irc = 0;
 	int tmpint;
 	irc = sscanf(value, "%u", &tmpint);
 	if (irc != 1) {
@@ -569,6 +570,9 @@ static TPM_RC TSS_SetLocality(TSS_CONTEXT *tssContext, const char *value)
 	else {
 	    tssContext->locality = tmpint;
 	}
+#else
+	tssContext->locality = 0;
+#endif
     }
     return rc;
 }
