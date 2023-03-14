@@ -313,8 +313,6 @@ TPM_RC
 CertifyCreation_In_Unmarshal(CertifyCreation_In *target, BYTE **buffer, uint32_t *size, TPM_HANDLE handles[]);
 UINT16
 CertifyCreation_Out_Marshal(CertifyCreation_Out *source, TPMI_ST_COMMAND_TAG tag, BYTE **buffer, uint32_t *size);
-TPM_RC
-CertifyX509_In_Unmarshal(CertifyX509_In *target, BYTE **buffer, uint32_t *size, TPM_HANDLE handles[]);
 UINT16
 CertifyX509_Out_Marshal(CertifyX509_Out *source, TPMI_ST_COMMAND_TAG tag, BYTE **buffer, uint32_t *size);
 TPM_RC

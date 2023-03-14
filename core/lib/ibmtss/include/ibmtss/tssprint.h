@@ -91,8 +91,6 @@ extern "C" {
     LIB_EXPORT
     void TSS_TPM_CC_Print(const char *string, TPM_CC source, unsigned int indent);
     LIB_EXPORT
-    void TSS_TPM_TPMA_ALGORITHM_Print(TPMA_ALGORITHM source, unsigned int indent);
-    LIB_EXPORT
     void TSS_TPM_CLOCK_ADJUST_Print(const char *string, TPM_CLOCK_ADJUST source, unsigned int indent);
     LIB_EXPORT
     void TSS_TPM_EO_Print(const char *string, TPM_EO source, unsigned int indent);
