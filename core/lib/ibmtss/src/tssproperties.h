@@ -130,9 +130,9 @@ extern "C" {
 	   structure.  Scripting will not work, and persistent objects will not work, but a single
 	   application will otherwise work. */
 #ifdef TPM_TSS_NOFILE
-	TSS_SESSIONS sessions[MAX_ACTIVE_SESSIONS];
-	TSS_OBJECT_PUBLIC objectPublic[64];
-	TSS_NVPUBLIC nvPublic[64];
+	TSS_SESSIONS sessions[3];
+	TSS_OBJECT_PUBLIC objectPublic[8];
+	TSS_NVPUBLIC nvPublic[8];
 #endif
 	/* ports, host name, server (packet) type for socket interface */
 	short tssCommandPort;
