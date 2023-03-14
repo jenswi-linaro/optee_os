@@ -47,11 +47,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifndef TPM_TSS_NO_OPENSSL
 #ifndef TPM_TSS_NORSA
 #include <openssl/rsa.h>
 #endif
 #ifndef TPM_TSS_NOECC
 #include <openssl/ec.h>
+#endif
 #endif
 
 #include <ibmtss/tss.h>
