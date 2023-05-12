@@ -2265,7 +2265,8 @@ static enum pkcs11_rc set_private_key_data_rsa(struct obj_attrs **head,
 	mbedtls_mpi_init(&p);
 	mbedtls_mpi_init(&q);
 
-	mbedtls_rc = mbedtls_pk_parse_key(&pk, data, key_size, NULL, 0);
+	mbedtls_rc = mbedtls_pk_parse_key(&pk, data, key_size,
+					  NULL, 0, NULL, 0);
 	if (mbedtls_rc) {
 		rc = PKCS11_CKR_ARGUMENTS_BAD;
 		goto out;
