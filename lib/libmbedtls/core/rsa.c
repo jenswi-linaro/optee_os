@@ -10,7 +10,6 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/pk.h>
-#include <mbedtls/pk_internal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <tee/tee_cryp_utl.h>
@@ -18,6 +17,7 @@
 #include <fault_mitigation.h>
 
 #include "mbed_helpers.h"
+#include "../mbedtls/library/pk_wrap.h"
 
 static TEE_Result get_tee_result(int lmd_res)
 {
@@ -99,7 +99,7 @@ static uint32_t tee_algo_to_mbedtls_hash_algo(uint32_t algo)
 static void rsa_init_from_key_pair(mbedtls_rsa_context *rsa,
 				struct rsa_keypair *key)
 {
-	mbedtls_rsa_init(rsa, 0, 0);
+	mbedtls_rsa_init(rsa);
 
 	rsa->E = *(mbedtls_mpi *)key->e;
 	rsa->N = *(mbedtls_mpi *)key->n;
@@ -235,7 +235,7 @@ TEE_Result sw_crypto_acipher_gen_rsa_key(struct rsa_keypair *key,
 		return TEE_ERROR_BAD_STATE;
 
 	memset(&rsa, 0, sizeof(rsa));
-	mbedtls_rsa_init(&rsa, 0, 0);
+	mbedtls_rsa_init(&rsa);
 
 	/* get the public exponent */
 	mbedtls_mpi_write_binary((mbedtls_mpi *)key->e,
@@ -288,7 +288,7 @@ TEE_Result sw_crypto_acipher_rsanopad_encrypt(struct rsa_public_key *key,
 	unsigned long offset = 0;
 
 	memset(&rsa, 0, sizeof(rsa));
-	mbedtls_rsa_init(&rsa, 0, 0);
+	mbedtls_rsa_init(&rsa);
 
 	rsa.E = *(mbedtls_mpi *)key->e;
 	rsa.N = *(mbedtls_mpi *)key->n;
@@ -365,7 +365,7 @@ TEE_Result sw_crypto_acipher_rsanopad_decrypt(struct rsa_keypair *key,
 	memset(buf, 0, blen);
 	memcpy(buf + rsa.len - src_len, src, src_len);
 
-	lmd_res = mbedtls_rsa_private(&rsa, NULL, NULL, buf, buf);
+	lmd_res = mbedtls_rsa_private(&rsa, mbd_rand, NULL, buf, buf);
 	if (lmd_res != 0) {
 		FMSG("mbedtls_rsa_private() returned 0x%x", -lmd_res);
 		res = get_tee_result(lmd_res);
@@ -460,12 +460,8 @@ TEE_Result sw_crypto_acipher_rsaes_decrypt(uint32_t algo,
 
 	mbedtls_rsa_set_padding(&rsa, lmd_padding, md_algo);
 
-	if (lmd_padding == MBEDTLS_RSA_PKCS_V15)
-		lmd_res = pk_info->decrypt_func(&rsa, src, src_len, buf, &blen,
-						blen, NULL, NULL);
-	else
-		lmd_res = pk_info->decrypt_func(&rsa, src, src_len, buf, &blen,
-						blen, mbd_rand, NULL);
+	lmd_res = pk_info->decrypt_func(&rsa, src, src_len, buf, &blen,
+					blen, mbd_rand, NULL);
 	if (lmd_res != 0) {
 		FMSG("decrypt_func() returned 0x%x", -lmd_res);
 		res = get_tee_result(lmd_res);
@@ -512,7 +508,7 @@ TEE_Result sw_crypto_acipher_rsaes_encrypt(uint32_t algo,
 	uint32_t md_algo = MBEDTLS_MD_NONE;
 
 	memset(&rsa, 0, sizeof(rsa));
-	mbedtls_rsa_init(&rsa, 0, 0);
+	mbedtls_rsa_init(&rsa);
 
 	rsa.E = *(mbedtls_mpi *)key->e;
 	rsa.N = *(mbedtls_mpi *)key->n;
@@ -644,12 +640,8 @@ TEE_Result sw_crypto_acipher_rsassa_sign(uint32_t algo, struct rsa_keypair *key,
 
 	mbedtls_rsa_set_padding(&rsa, lmd_padding, md_algo);
 
-	if (lmd_padding == MBEDTLS_RSA_PKCS_V15)
-		lmd_res = pk_info->sign_func(&rsa, md_algo, msg, msg_len, sig,
-					     sig_len, NULL, NULL);
-	else
-		lmd_res = pk_info->sign_func(&rsa, md_algo, msg, msg_len, sig,
-					     sig_len, mbd_rand, NULL);
+	lmd_res = pk_info->sign_func(&rsa, md_algo, msg, msg_len, sig,
+				     *sig_len, sig_len, mbd_rand, NULL);
 	if (lmd_res != 0) {
 		FMSG("sign_func failed, returned 0x%x", -lmd_res);
 		res = get_tee_result(lmd_res);
@@ -694,7 +686,7 @@ TEE_Result sw_crypto_acipher_rsassa_verify(uint32_t algo,
 	FTMN_CALLEE_SWAP_HASH(FTMN_FUNC_HASH("crypto_acipher_rsassa_verify"));
 
 	memset(&rsa, 0, sizeof(rsa));
-	mbedtls_rsa_init(&rsa, 0, 0);
+	mbedtls_rsa_init(&rsa);
 
 	rsa.E = *(mbedtls_mpi *)key->e;
 	rsa.N = *(mbedtls_mpi *)key->n;
