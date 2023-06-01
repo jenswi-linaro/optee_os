@@ -227,11 +227,18 @@ endif
 ifeq ($(CFG_CRYPTOLIB_NAME),mbedtls)
 # mbedtls has to be complemented with some algorithms by LTC
 # Specify the algorithms here
+_CFG_CORE_LTC_RSA := $(CFG_CRYPTO_RSA)
 _CFG_CORE_LTC_DSA := $(CFG_CRYPTO_DSA)
-_CFG_CORE_LTC_MPI := $(CFG_CRYPTO_DSA)
-_CFG_CORE_LTC_SHA256_DESC := $(CFG_CRYPTO_DSA)
-_CFG_CORE_LTC_SHA384_DESC := $(CFG_CRYPTO_DSA)
-_CFG_CORE_LTC_SHA512_DESC := $(CFG_CRYPTO_DSA)
+_CFG_CORE_LTC_MPI := $(call cfg-one-enabled, CFG_CRYPTO_RSA CFG_CRYPTO_DSA)
+_CFG_CORE_LTC_MD5_DESC := $(CFG_CRYPTO_RSA)
+_CFG_CORE_LTC_SHA1_DESC := $(CFG_CRYPTO_RSA)
+_CFG_CORE_LTC_SHA224_DESC := $(CFG_CRYPTO_RSA)
+_CFG_CORE_LTC_SHA256_DESC := $(call cfg-one-enabled, CFG_CRYPTO_RSA \
+						     CFG_CRYPTO_DSA)
+_CFG_CORE_LTC_SHA384_DESC := $(call cfg-one-enabled, CFG_CRYPTO_RSA \
+						     CFG_CRYPTO_DSA)
+_CFG_CORE_LTC_SHA512_DESC := $(call cfg-one-enabled, CFG_CRYPTO_RSA \
+						     CFG_CRYPTO_DSA)
 _CFG_CORE_LTC_XTS := $(CFG_CRYPTO_XTS)
 _CFG_CORE_LTC_CCM := $(CFG_CRYPTO_CCM)
 _CFG_CORE_LTC_AES := $(call cfg-one-enabled, CFG_CRYPTO_XTS CFG_CRYPTO_CCM \
@@ -307,6 +314,6 @@ _CFG_CORE_LTC_EC25519 := $(call ltc-one-enabled, ED25519 X25519)
 
 # Enable TEE_ALG_RSASSA_PKCS1_V1_5 algorithm for signing with PKCS#1 v1.5 EMSA
 # without ASN.1 around the hash.
-ifeq ($(CFG_CRYPTOLIB_NAME),tomcrypt)
+ifeq ($(_CFG_CORE_LTC_RSA),y)
 CFG_CRYPTO_RSASSA_NA1 ?= y
 endif

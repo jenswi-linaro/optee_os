@@ -121,7 +121,6 @@ include mk/lib.mk
 endif #tomcrypt
 
 ifeq ($(CFG_CRYPTOLIB_NAME),mbedtls)
-$(call force,CFG_CRYPTO_RSASSA_NA1,n,not supported by mbedtls)
 libname = tomcrypt
 libdir = core/lib/libtomcrypt
 base-prefix :=
