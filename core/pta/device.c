@@ -16,6 +16,7 @@
 #include <kernel/tee_ta_manager.h>
 #include <pta_device.h>
 #include <string.h>
+#include <tee/tee_fs.h>
 #include <tee/uuid.h>
 #include <user_ta_header.h>
 
@@ -83,6 +84,8 @@ static TEE_Result invoke_command(void *pSessionContext __unused,
 				 uint32_t nCommandID, uint32_t nParamTypes,
 				 TEE_Param pParams[TEE_NUM_PARAMS])
 {
+	TEE_Result res = TEE_SUCCESS;
+
 	switch (nCommandID) {
 	case PTA_CMD_GET_DEVICES:
 		return get_devices(nParamTypes, pParams,
@@ -90,6 +93,12 @@ static TEE_Result invoke_command(void *pSessionContext __unused,
 	case PTA_CMD_GET_DEVICES_SUPP:
 		return get_devices(nParamTypes, pParams,
 				   TA_FLAG_DEVICE_ENUM_SUPP);
+	case PTA_CMD_GET_DEVICES_RPMB:
+		res = tee_rpmb_reinit();
+		if (res)
+			return TEE_ERROR_STORAGE_NOT_AVAILABLE;
+		return get_devices(nParamTypes, pParams,
+				   TA_FLAG_DEVICE_ENUM_RPMB);
 	default:
 		break;
 	}
