@@ -485,7 +485,6 @@ TEE_Result tee_ta_init_user_ta_session(const TEE_UUID *uuid,
 	crypto_rng_read(&utc->uctx.keys, sizeof(utc->uctx.keys));
 #endif
 
-	mutex_lock(&tee_ta_mutex);
 	s->ts_sess.ctx = &utc->ta_ctx.ts_ctx;
 	s->ts_sess.handle_scall = s->ts_sess.ctx->ops->handle_scall;
 	/*
@@ -494,7 +493,13 @@ TEE_Result tee_ta_init_user_ta_session(const TEE_UUID *uuid,
 	 * handle single instance TAs.
 	 */
 	TAILQ_INSERT_TAIL(&tee_ctxes, &utc->ta_ctx, link);
-	mutex_unlock(&tee_ta_mutex);
+
+	return TEE_SUCCESS;
+}
+
+TEE_Result tee_ta_complete_user_ta_session(struct tee_ta_session *s)
+{
+	struct user_ta_ctx *utc = to_user_ta_ctx(s->ctx);
 
 	/*
 	 * We must not hold tee_ta_mutex while allocating page tables as

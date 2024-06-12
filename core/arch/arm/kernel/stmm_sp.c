@@ -345,10 +345,14 @@ TEE_Result stmm_init_session(const TEE_UUID *uuid, struct tee_ta_session *sess)
 
 	spc->ta_ctx->is_initializing = true;
 
-	mutex_lock(&tee_ta_mutex);
 	sess->ts_sess.ctx = &spc->ta_ctx.ts_ctx;
 	sess->ts_sess.handle_scall = sess->ts_sess.ctx->ops->handle_scall;
-	mutex_unlock(&tee_ta_mutex);
+	return TEE_SUCCESS;
+}
+
+TEE_Result stmm_complete_session(struct tee_ta_session *sess)
+{
+	struct stmm_ctx *spc = to_stmm_ctx(sess->ctx);
 
 	ts_push_current_session(&sess->ts_sess);
 	res = load_stmm(spc);

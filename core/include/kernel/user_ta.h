@@ -60,12 +60,18 @@ static inline struct user_ta_ctx *to_user_ta_ctx(struct ts_ctx *ctx)
 #ifdef CFG_WITH_USER_TA
 TEE_Result tee_ta_init_user_ta_session(const TEE_UUID *uuid,
 			struct tee_ta_session *s);
+TEE_Result tee_ta_complete_user_ta_session(struct tee_ta_session *s);
 #else
 static inline TEE_Result tee_ta_init_user_ta_session(
 			const TEE_UUID *uuid __unused,
 			struct tee_ta_session *s __unused)
 {
 	return TEE_ERROR_ITEM_NOT_FOUND;
+}
+static inline TEE_Result
+tee_ta_complete_user_ta_session(struct tee_ta_session *s __unused)
+{
+	return TEE_ERROR_GENERIC;
 }
 #endif
 
