@@ -36,7 +36,7 @@
 					BIT32(11)
 #define TA_FLAG_DEVICE_ENUM_RPMB	BIT32(12) /* with rpmb */
 
-#define TA_FLAGS_MASK			GENMASK_32(10, 0)
+#define TA_FLAGS_MASK			GENMASK_32(12, 0)
 
 struct ta_head {
 	TEE_UUID uuid;
