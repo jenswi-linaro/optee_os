@@ -876,7 +876,19 @@ static int config_psci(struct dt_descriptor *dt __unused)
 static int mark_tzdram_as_reserved(struct dt_descriptor *dt)
 {
 	return add_res_mem_dt_node(dt, "optee_core", CFG_TZDRAM_START,
-				   CFG_TZDRAM_SIZE);
+				   CFG_TZDRAM_SIZE, NULL);
+}
+
+static int add_sdp_mem_node(struct dt_descriptor *dt)
+{
+	paddr_t pa = TEE_SDP_TEST_MEM_BASE;
+	size_t sz = TEE_SDP_TEST_MEM_SIZE;
+
+#ifdef CFG_TEE_SDP_MEM_BASE
+	pa = CFG_TEE_SDP_MEM_BASE;
+	sz = CFG_TEE_SDP_MEM_SIZE;
+#endif
+	return add_res_mem_dt_node(dt, "sdp", pa, sz, "linaro,restricted-heap");
 }
 
 static void update_external_dt(void)
@@ -896,6 +908,8 @@ static void update_external_dt(void)
 	if (mark_static_shm_as_reserved(dt))
 		panic("Failed to config non-secure memory");
 #endif
+	if (IS_ENABLED(CFG_SECURE_DATA_PATH) && add_sdp_mem_node(dt))
+		panic("Failed to config SDP memory");
 
 	if (mark_tzdram_as_reserved(dt))
 		panic("Failed to config secure memory");
