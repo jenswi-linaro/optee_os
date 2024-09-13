@@ -66,7 +66,7 @@ static struct tee_mmap_region static_mmap_regions[CFG_MMAP_REGIONS
 #if defined(CFG_CORE_ASLR) || defined(CFG_CORE_PHYS_RELOCATABLE)
 						+ 1
 #endif
-						+ 2] __nex_bss;
+						+ 3] __nex_bss;
 static struct memory_map static_memory_map __nex_data = {
 	.map = static_mmap_regions,
 	.alloc_count = ARRAY_SIZE(static_mmap_regions),
@@ -1132,10 +1132,22 @@ static void collect_mem_ranges(struct memory_map *mem_map)
 		}
 
 		if (IS_ENABLED(CFG_WITH_PAGER)) {
+			paddr_t pa = 0;
+			size_t sz = 0;
+
 			ADD_PHYS_MEM(MEM_AREA_INIT_RAM_RX, VCORE_INIT_RX_PA,
 				     VCORE_INIT_RX_SZ);
 			ADD_PHYS_MEM(MEM_AREA_INIT_RAM_RO, VCORE_INIT_RO_PA,
 				     VCORE_INIT_RO_SZ);
+			/*
+			 * Core init mapping shall cover up to end of the
+			 * physical RAM.  This is required since the hash
+			 * table is appended to the binary data after the
+			 * firmware build sequence.
+			 */
+			pa = VCORE_INIT_RO_PA + VCORE_INIT_RO_SZ;
+			sz = TEE_RAM_START + TEE_RAM_PH_SIZE - pa;
+			ADD_PHYS_MEM(MEM_AREA_TEE_RAM, pa, sz);
 		} else {
 			ADD_PHYS_MEM(MEM_AREA_SEC_RAM_OVERALL, next_pa,
 				     secure_only[0].paddr +
