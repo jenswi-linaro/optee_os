@@ -916,14 +916,12 @@ static void dump_mmap_table(struct memory_map *mem_map)
 	size_t n = 0;
 
 	for (n = 0; n < mem_map->count; n++) {
-		struct tee_mmap_region *map = mem_map->map + n;
-		vaddr_t __maybe_unused vstart;
+		struct tee_mmap_region *map __maybe_unused = mem_map->map + n;
 
-		vstart = map->va + ((vaddr_t)map->pa & (map->region_size - 1));
 		DMSG("type %-12s va 0x%08" PRIxVA "..0x%08" PRIxVA
 		     " pa 0x%08" PRIxPA "..0x%08" PRIxPA " size 0x%08zx (%s)",
-		     teecore_memtype_name(map->type), vstart,
-		     vstart + map->size - 1, map->pa,
+		     teecore_memtype_name(map->type), map->va,
+		     map->va + map->size - 1, map->pa,
 		     (paddr_t)(map->pa + map->size - 1), map->size,
 		     map->region_size == SMALL_PAGE_SIZE ? "smallpg" : "pgdir");
 	}
