@@ -1094,8 +1094,6 @@ static void collect_mem_ranges(struct memory_map *mem_map)
 		 * not be mapped by MEM_AREA_SEC_RAM_OVERALL, but all the
 		 * read/write should.
 		 */
-		ADD_PHYS_MEM(MEM_AREA_TEE_RAM, ram_start,
-			     VCORE_UNPG_RX_PA - ram_start);
 		ADD_PHYS_MEM(MEM_AREA_SEC_RAM_OVERALL, ram_start,
 			     VCORE_UNPG_RX_PA - ram_start);
 		ADD_PHYS_MEM(MEM_AREA_TEE_RAM_RX, VCORE_UNPG_RX_PA,
