@@ -1156,8 +1156,8 @@ static void collect_mem_ranges(struct memory_map *mem_map)
 		}
 	} else {
 		ADD_PHYS_MEM(MEM_AREA_TEE_RAM, TEE_RAM_START, TEE_RAM_PH_SIZE);
-		ADD_PHYS_MEM(MEM_AREA_SEC_RAM_OVERALL, TEE_RAM_START,
-			     TEE_RAM_PH_SIZE);
+		ADD_PHYS_MEM(MEM_AREA_SEC_RAM_OVERALL, secure_only[n].paddr,
+			     secure_only[0].size);
 	}
 
 	for (n = 1; n < ARRAY_SIZE(secure_only); n++)
