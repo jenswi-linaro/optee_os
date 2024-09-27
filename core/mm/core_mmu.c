@@ -69,7 +69,7 @@ static struct tee_mmap_region static_mmap_regions[CFG_MMAP_REGIONS
 #if defined(CFG_CORE_ASLR) || defined(CFG_CORE_PHYS_RELOCATABLE)
 						+ 1
 #endif
-						+ 3] __nex_bss;
+						+ 4] __nex_bss;
 static struct memory_map static_memory_map __nex_data = {
 	.map = static_mmap_regions,
 	.alloc_count = ARRAY_SIZE(static_mmap_regions),
